@@ -51,7 +51,7 @@ struct Photo {
     double fx, fy;  // Bildmitte des Ausschnitts (0..1)
 };
 // Gemeinfrei/CC0 (Wikimedia Commons): Anhinga – NPS Everglades · Oolah Valley – NPS Alaska · Chute-Montmorency – CC0
-const Photo kPhotos[] = {{":/photos/bird.jpg", 0.47, 0.42}, {":/photos/valley.jpg", 0.50, 0.30}, {":/photos/falls.jpg", 0.56, 0.36}};
+const Photo kPhotos[] = {{":/photos/bird.jpg", 0.52, 0.28}, {":/photos/valley.jpg", 0.50, 0.30}, {":/photos/falls.jpg", 0.56, 0.36}};
 constexpr int kPhotoCount = 3;
 constexpr double kZoom = 1920.0 / 640.0;  // Ausschnitt = 1/3 der Breite -> wie 1080p-Vollbild in Originalgröße
 }  // namespace
@@ -142,7 +142,7 @@ void QualityPreview::paintEvent(QPaintEvent*) {
     const int h = std::min(height_, native_);
     const QString t = QString("%1p · %2×%3").arg(h).arg(int(std::lround(h * 16.0 / 9 / 2)) * 2).arg(h);
     const double bw = QFontMetrics(f).horizontalAdvance(t) + 20;
-    const QRectF b(r.right() - bw - 10, r.top() + 10, bw, 22);
+    const QRectF b(r.left() + 10, r.bottom() - 32, bw, 22);
     p.setBrush(QColor(0, 0, 0, 170));
     p.drawRoundedRect(b, 11, 11);
     p.setPen(Qt::white);
