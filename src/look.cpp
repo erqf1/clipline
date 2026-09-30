@@ -67,6 +67,10 @@ QSlider::handle:horizontal { width: 20px; height: 20px; margin: -7px 0; backgrou
 QProgressBar { background: @panel2@; border: none; border-radius: 5px; height: 10px; }
 QProgressBar::chunk { background: @accent@; border-radius: 5px; }
 QListView { background: transparent; border: none; outline: 0; }
+QListWidget { background: @panel2@; border: 1px solid @border@; border-radius: 12px; padding: 4px; }
+QListWidget::item { border-radius: 8px; }
+QListWidget::item:hover { background: @border@; }
+QListWidget::item:selected { background: @accent@; color: @acctext@; }
 QScrollBar:vertical { width: 10px; background: transparent; }
 QScrollBar::handle:vertical { background: @border@; border-radius: 5px; min-height: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
@@ -138,27 +142,6 @@ QPixmap cliplineLogo(int size, bool recording, bool paused) {
         p.setBrush(QColor("#ff2d55"));
         p.drawEllipse(QPointF(50, 50), 7, 7);
     }
-    return pm;
-}
-
-QPixmap cutlineLogo(int size) {
-    QPixmap pm(size, size);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::Antialiasing);
-    p.scale(size / 100.0, size / 100.0);
-    QLinearGradient g(0, 0, 100, 100);
-    g.setColorAt(0, QColor("#22d3a0"));
-    g.setColorAt(1, QColor("#2563eb"));
-    p.setPen(Qt::NoPen);
-    p.setBrush(g);
-    p.drawRoundedRect(QRectF(4, 4, 92, 92), 22, 22);
-    p.setBrush(QColor(255, 255, 255, 235));
-    QPainterPath t;
-    t.moveTo(38, 27); t.lineTo(74, 50); t.lineTo(38, 73); t.closeSubpath();
-    p.drawPath(t);
-    p.setPen(QPen(QColor(255, 255, 255, 200), 5, Qt::SolidLine, Qt::RoundCap));
-    p.drawLine(24, 20, 24, 80);
     return pm;
 }
 

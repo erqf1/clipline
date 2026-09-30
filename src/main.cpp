@@ -16,6 +16,41 @@
 #include "i18n.h"
 #include "look.h"
 #include "setup.h"
+#include <QDialog>
+#include <QLabel>
+#include <QListWidget>
+#include <QVBoxLayout>
+
+// Erststart: Sprache wählen (wie in Cutline)
+static QString askLanguage() {
+    QDialog dlg;
+    dlg.setWindowTitle("Clipline");
+    dlg.setWindowIcon(cliplineIcon());
+    dlg.resize(380, 520);
+    auto* v = new QVBoxLayout(&dlg);
+    v->setContentsMargins(22, 22, 22, 22);
+    v->setSpacing(12);
+    auto* logo = new QLabel;
+    logo->setPixmap(cliplineLogo(48));
+    v->addWidget(logo);
+    auto* title = new QLabel("Choose your language · Sprache wählen");
+    title->setObjectName("h2");
+    v->addWidget(title);
+    auto* list = new QListWidget;
+    list->setStyleSheet("QListWidget { font-size: 15px; } QListWidget::item { padding: 8px 10px; }");
+    list->addItems(languageNames());
+    int cur = languageCodes().indexOf(language());
+    list->setCurrentRow(cur < 0 ? 0 : cur);
+    v->addWidget(list, 1);
+    auto* ok = new QPushButton("OK");
+    ok->setObjectName("primary");
+    ok->setDefault(true);
+    v->addWidget(ok);
+    QObject::connect(ok, &QPushButton::clicked, &dlg, &QDialog::accept);
+    QObject::connect(list, &QListWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+    if (dlg.exec() != QDialog::Accepted) return QString();
+    return languageCodes().value(list->currentRow(), "en");
+}
 
 // Befehl an eine bereits laufende Instanz schicken; true = angekommen
 static bool sendToRunning(const QByteArray& cmd) {
@@ -67,7 +102,6 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         say(QString("monitor %1 dda=%2 rect=%3,%4 %5x%6").arg(m.name).arg(m.ddaIndex).arg(m.rect.x()).arg(m.rect.y())
                 .arg(m.rect.width()).arg(m.rect.height()));
     say("mics: " + listMicrophones().join(" | "));
-    say("cutline: " + findCutline());
     {
         SetupWizard wiz(cfg);
         auto* stack = wiz.findChild<QStackedWidget*>();
@@ -147,6 +181,12 @@ int main(int argc, char* argv[]) {
     applyLook(cfg);
 
     if (!cfg.firstRunDone) {
+        if (cfg.language.isEmpty()) {
+            const QString code = askLanguage();
+            if (code.isEmpty()) return 0;
+            cfg.language = code;
+            setLanguage(code);
+        }
         SetupWizard wizard(cfg);
         if (wizard.exec() != QDialog::Accepted) return 0;
         cfg = wizard.config();

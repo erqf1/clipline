@@ -93,8 +93,6 @@ void Controller::applyConfig(const Config& c, bool first) {
     applyLook(cfg_);
     QDir().mkpath(cfg_.clipsDir);
     if (autostartChanged && !quiet) setAutostart(cfg_.autostart);
-    // Pfad für Cutline hinterlegen (Cutline zeigt dann die Clip-Galerie an)
-    if (!quiet) QSettings("WSoftware", "Clipline").setValue("exePath", QCoreApplication::applicationFilePath());
     rec_.setConfig(cfg_);
     registerHotkey();
     if (gallery_) {  // neu aufbauen, damit Farben/Sprache greifen

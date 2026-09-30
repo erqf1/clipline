@@ -14,7 +14,6 @@ const QList<QColor>& accentChoices();
 
 // Logos + Symbole (mit QPainter gezeichnet)
 QPixmap cliplineLogo(int size, bool recording = false, bool paused = false);
-QPixmap cutlineLogo(int size);
 QIcon cliplineIcon();
 
 enum class Ic { Record, Folder, Gear, Play, Edit, Reveal, Trash, Rename, Pause, Check };

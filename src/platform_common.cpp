@@ -44,35 +44,6 @@ Monitor findMonitor(const QString& id) {
     return all.isEmpty() ? Monitor{} : all.first();
 }
 
-// Cutline schreibt beim Start seinen Pfad nach QSettings("WSoftware", "VideoEditor")/exePath
-QString findCutline() {
-    const QString p = QSettings("WSoftware", "VideoEditor").value("exePath").toString();
-    if (!p.isEmpty() && QFileInfo::exists(p)) return p;
-#ifdef Q_OS_WIN
-    for (const char* root : {"HKEY_CURRENT_USER", "HKEY_LOCAL_MACHINE"}) {
-        QSettings reg(QString("%1\\Software\\Classes\\Applications\\Cutline.exe\\shell\\open\\command").arg(root),
-                      QSettings::NativeFormat);
-        QString cmd = reg.value("Default").toString();
-        auto m = QRegularExpression("^\"([^\"]+)\"").match(cmd);
-        if (m.hasMatch() && QFileInfo::exists(m.captured(1))) return m.captured(1);
-    }
-#elif defined(Q_OS_MAC)
-    for (const QString& c : {QString("/Applications/Cutline.app/Contents/MacOS/Cutline"),
-                             QDir::homePath() + "/Applications/Cutline.app/Contents/MacOS/Cutline"})
-        if (QFileInfo::exists(c)) return c;
-#else
-    const QString c = QStandardPaths::findExecutable("cutline");
-    if (!c.isEmpty()) return c;
-#endif
-    return QString();
-}
-
-bool openInCutline(const QString& file) {
-    const QString exe = findCutline();
-    if (exe.isEmpty()) return false;
-    return QProcess::startDetached(exe, {QDir::toNativeSeparators(file)});
-}
-
 void revealInFolder(const QString& path) {
 #ifdef Q_OS_WIN
     QProcess::startDetached("explorer.exe", {"/select,", QDir::toNativeSeparators(path)});

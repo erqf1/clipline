@@ -50,8 +50,9 @@ struct Photo {
     const char* file;
     double fx, fy;  // Bildmitte des Ausschnitts (0..1)
 };
-// Gemeinfrei/CC0 (Wikimedia Commons): Anhinga – NPS Everglades · Oolah Valley – NPS Alaska · Chute-Montmorency – CC0
-const Photo kPhotos[] = {{":/photos/bird.jpg", 0.52, 0.28}, {":/photos/valley.jpg", 0.50, 0.30}, {":/photos/falls.jpg", 0.56, 0.36}};
+// Wikimedia Commons: Baltimore Oriole chicks – Juliancolton, public domain · Eisvogel – Frank-2.0, CC0 ·
+// Erinaceus roumanicus – George Chernilevsky, public domain
+const Photo kPhotos[] = {{":/photos/nest.jpg", 0.47, 0.45}, {":/photos/kingfisher.jpg", 0.36, 0.46}, {":/photos/hedgehog.jpg", 0.42, 0.60}};
 constexpr int kPhotoCount = 3;
 constexpr double kZoom = 1920.0 / 640.0;  // Ausschnitt = 1/3 der Breite -> wie 1080p-Vollbild in Originalgröße
 }  // namespace
@@ -286,8 +287,8 @@ QWidget* ConfigPages::folderPage(bool welcome) {
     auto* form = new QFormLayout;
     auto* lang = new QComboBox;
     lang->addItem(L("System"), "");
-    lang->addItem("English", "en");
-    lang->addItem("Deutsch", "de");
+    const QStringList codes = languageCodes(), names = languageNames();
+    for (int i = 0; i < codes.size(); ++i) lang->addItem(names[i], codes[i]);
     lang->setCurrentIndex(std::max(0, lang->findData(cfg_.language)));
     connect(lang, &QComboBox::currentIndexChanged, this, [this, lang] { cfg_.language = lang->currentData().toString(); emit changed(); });
     form->addRow(L("Language"), lang);

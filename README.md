@@ -5,7 +5,8 @@ Save the last moments of your screen with one key. Clipline records quietly in t
 - **Runs in the background.** Starts with your computer, sits in the tray and uses the graphics card to record (NVIDIA, AMD, Intel, Apple). About 5 % of one CPU core at 1080p60 on a typical PC.
 - **Clips from memory.** The last 10 s to 10 min are kept in RAM, nothing touches your disk until you save. The setup shows you the estimated RAM use before you start.
 - **One key.** `Ctrl+Alt+S` (configurable) saves the clip as an MP4 in your folder, with system sound and optionally your microphone.
-- **Clip gallery.** Open Clipline to see all clips with previews. With [Cutline](https://github.com/erqf1/cutline) installed you can open any clip straight in the editor – and Cutline shows your Clipline clips too.
+- **Clip gallery.** Open Clipline to see all clips with previews – one click plays a clip.
+- **12 languages**: Deutsch, English, Español, Français, Italiano, Português, Nederlands, Polski, Türkçe, Русский, 日本語, 中文.
 - **Your way.** Clips folder anywhere, clip length slider with live RAM estimate, resolution from native down to 360p with a pixel preview, frame rate, quality, your own hotkey, accent colour, dark or light – all set on first start and changeable later.
 
 ## Download
@@ -49,7 +50,7 @@ On Windows, `build.bat` builds and creates the portable zip. Release packages fo
 
 ## Photo credits
 
-Quality preview photos (bundled in the app and on the website): *Female anhinga* – NPS Everglades, public domain · *Oolah Valley* – NPS Alaska, public domain · *Parc de la Chute-Montmorency* – Wikimedia Commons, CC0.
+Quality preview photos (bundled in the app and on the website, from Wikimedia Commons): *Baltimore Oriole chicks in NY* – Juliancolton, public domain · *Eisvogel kingfisher* – Frank-2.0, CC0 · *Erinaceus roumanicus* – George Chernilevsky, public domain.
 
 ## License
 

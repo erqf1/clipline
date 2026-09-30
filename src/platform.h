@@ -26,8 +26,6 @@ bool systemAudioSupported();
 // ---------------------------------------------------------------- System
 bool setAutostart(bool on);
 QString ffmpegPath();
-QString findCutline();                       // leer = nicht installiert
-bool openInCutline(const QString& file);
 void revealInFolder(const QString& path);
 void playSaveSound();
 

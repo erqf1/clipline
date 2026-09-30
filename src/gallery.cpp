@@ -208,20 +208,16 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     head->addWidget(settings);
     v->addLayout(head);
 
-    // Unterzeile: Ordner, Anzahl, Bearbeiten in Cutline
+    // Unterzeile: Ordner und Anzahl
     auto* sub = new QHBoxLayout;
     folder_ = new QLabel;
     folder_->setObjectName("muted");
     count_ = new QLabel;
     count_->setObjectName("muted");
-    editBtn_ = new QPushButton(QIcon(cutlineLogo(64)), " " + L("Edit in Cutline"));
-    editBtn_->setEnabled(false);
-    connect(editBtn_, &QPushButton::clicked, this, [this] { if (!selected().isEmpty()) openInCutline(selected()); });
     sub->addWidget(folder_);
     sub->addWidget(new QLabel("·"));
     sub->addWidget(count_);
     sub->addStretch();
-    sub->addWidget(editBtn_);
     v->addLayout(sub);
 
     // Raster
@@ -238,10 +234,10 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     view_->setModel(&model_);
     view_->setItemDelegate(new TileDelegate(&thumbs_, pal, view_));
     connect(&thumbs_, &ThumbCache::ready, view_->viewport(), qOverload<>(&QWidget::update));
-    connect(view_, &QListView::doubleClicked, this, [this](const QModelIndex& i) { openClip(i.data(kPathRole).toString()); });
+    // Ein Klick öffnet den Clip (Rechtsklick für weitere Aktionen)
+    view_->setCursor(Qt::PointingHandCursor);
+    connect(view_, &QListView::clicked, this, [this](const QModelIndex& i) { openClip(i.data(kPathRole).toString()); });
     connect(view_, &QListView::customContextMenuRequested, this, &GalleryWindow::contextMenu);
-    connect(view_->selectionModel(), &QItemSelectionModel::selectionChanged, this,
-            [this] { editBtn_->setEnabled(!selected().isEmpty()); });
     v->addWidget(view_, 1);
 
     empty_ = new QLabel;
@@ -249,20 +245,6 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     empty_->setObjectName("muted");
     empty_->setWordWrap(true);
     v->addWidget(empty_, 1);
-
-    // Hinweis auf Cutline, falls nicht installiert
-    tip_ = new QFrame;
-    tip_->setObjectName("card");
-    auto* th = new QHBoxLayout(tip_);
-    th->setContentsMargins(12, 8, 12, 8);
-    auto* tl = new QLabel;
-    tl->setPixmap(cutlineLogo(26));
-    th->addWidget(tl);
-    th->addWidget(new QLabel(L("Tip: install Cutline to trim and edit your clips.")), 1);
-    auto* get = new QPushButton(L("Get Cutline"));
-    connect(get, &QPushButton::clicked, this, [] { QDesktopServices::openUrl(QUrl("https://erqf1.github.io/cutline/")); });
-    th->addWidget(get);
-    v->addWidget(tip_);
 
     reloadTimer_.setSingleShot(true);
     reloadTimer_.setInterval(400);
@@ -305,9 +287,6 @@ void GalleryWindow::reload() {
                              L("Press %1 and the last %2 are saved here.")
                                  .arg("<b>" + QKeySequence(ctl_->config().hotkey).toString(QKeySequence::NativeText) + "</b>",
                                       fmtDuration(ctl_->config().clipSeconds))));
-    const bool hasCutline = !findCutline().isEmpty();
-    editBtn_->setVisible(hasCutline);
-    tip_->setVisible(!hasCutline);
 }
 
 void GalleryWindow::updateStatus() {
@@ -334,7 +313,7 @@ QString GalleryWindow::selected() const {
 
 void GalleryWindow::openClip(const QString& path) {
     if (path.isEmpty()) return;
-    if (!openInCutline(path)) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 void GalleryWindow::contextMenu(const QPoint& pos) {
@@ -345,8 +324,6 @@ void GalleryWindow::contextMenu(const QPoint& pos) {
     const Palette pal = makePalette(ctl_->config().accent, ctl_->config().dark);
     QMenu m(this);
     m.addAction(icon(Ic::Play, pal.text), L("Play"), this, [path] { QDesktopServices::openUrl(QUrl::fromLocalFile(path)); });
-    if (!findCutline().isEmpty())
-        m.addAction(QIcon(cutlineLogo(64)), L("Edit in Cutline"), this, [path] { openInCutline(path); });
     m.addAction(icon(Ic::Reveal, pal.text), L("Show in folder"), this, [path] { revealInFolder(path); });
     m.addSeparator();
     m.addAction(icon(Ic::Rename, pal.text), L("Rename…"), this, [this, path] {

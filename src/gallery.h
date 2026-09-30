@@ -58,6 +58,4 @@ private:
     QFileSystemWatcher watcher_;
     QTimer reloadTimer_, statusTimer_;
     QLabel *status_, *folder_, *count_, *empty_;
-    QWidget* tip_;
-    QPushButton* editBtn_;
 };

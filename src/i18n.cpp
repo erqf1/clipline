@@ -3,121 +3,192 @@
 #include <QHash>
 #include <QLocale>
 
-static QString g_lang = "en";
+// Sprachen wie in Cutline. Schlüssel ist der englische Text; Spalten: de es fr it pt nl pl tr ru ja zh
+namespace {
+constexpr int N = 11;
+const char* kCodes[] = {"en", "de", "es", "fr", "it", "pt", "nl", "pl", "tr", "ru", "ja", "zh"};
+const char* kNames[] = {"English", "Deutsch", "Español", "Français", "Italiano", "Português",
+                        "Nederlands", "Polski", "Türkçe", "Русский", "日本語", "中文"};
 
-void setLanguage(const QString& code) {
-    QString c = code;
-    if (c.isEmpty()) c = QLocale::system().name().left(2);
-    g_lang = (c == "de") ? "de" : "en";
-}
+struct Entry { const char* en; const char* t[N]; };
 
-QString language() { return g_lang; }
+const Entry kTable[] = {
+ {"%1 clips", {"%1 Clips","%1 clips","%1 clips","%1 clip","%1 clipes","%1 clips","%1 klipów","%1 klip","Клипов: %1","%1 件のクリップ","%1 个剪辑"}},
+ {"1 clip", {"1 Clip","1 clip","1 clip","1 clip","1 clipe","1 clip","1 klip","1 klip","1 клип","1 件のクリップ","1 个剪辑"}},
+ {"Accent colour", {"Akzentfarbe","Color de acento","Couleur d'accent","Colore di accento","Cor de destaque","Accentkleur","Kolor akcentu","Vurgu rengi","Цвет акцента","アクセントカラー","强调色"}},
+ {"Back", {"Zurück","Atrás","Retour","Indietro","Voltar","Terug","Wstecz","Geri","Назад","戻る","返回"}},
+ {"Balanced", {"Ausgewogen","Equilibrada","Équilibrée","Bilanciata","Equilibrada","Gebalanceerd","Zrównoważona","Dengeli","Баланс","標準","均衡"}},
+ {"Cancel", {"Abbrechen","Cancelar","Annuler","Annulla","Cancelar","Annuleren","Anuluj","İptal","Отмена","キャンセル","取消"}},
+ {"Choose your language", {"Sprache wählen","Elige tu idioma","Choisissez votre langue","Scegli la lingua","Escolha o idioma","Kies je taal","Wybierz język","Dilinizi seçin","Выберите язык","言語を選択","选择语言"}},
+ {"Choose…", {"Auswählen…","Elegir…","Choisir…","Scegli…","Escolher…","Kiezen…","Wybierz…","Seç…","Выбрать…","選択…","选择…"}},
+ {"Click the button and press the combination you want. Works everywhere, even in games.",
+  {"Klick auf den Knopf und drück die gewünschte Kombination. Funktioniert überall, auch in Spielen.",
+   "Pulsa el botón y la combinación que quieras. Funciona en todas partes, incluso en juegos.",
+   "Cliquez sur le bouton puis appuyez sur la combinaison voulue. Fonctionne partout, même en jeu.",
+   "Fai clic sul pulsante e premi la combinazione che vuoi. Funziona ovunque, anche nei giochi.",
+   "Clique no botão e prima a combinação que quiser. Funciona em todo o lado, até em jogos.",
+   "Klik op de knop en druk de gewenste combinatie in. Werkt overal, ook in games.",
+   "Kliknij przycisk i naciśnij wybraną kombinację. Działa wszędzie, nawet w grach.",
+   "Düğmeye tıklayın ve istediğiniz tuş kombinasyonuna basın. Her yerde, oyunlarda bile çalışır.",
+   "Нажмите кнопку и нужное сочетание клавиш. Работает везде, даже в играх.",
+   "ボタンをクリックして、使いたいキーの組み合わせを押してください。ゲーム中でもどこでも使えます。",
+   "点击按钮并按下想要的组合键。在任何地方都有效，包括游戏中。"}},
+ {"Clip length & quality", {"Cliplänge & Qualität","Duración y calidad","Durée et qualité","Durata e qualità","Duração e qualidade","Cliplengte & kwaliteit","Długość i jakość","Klip süresi ve kalite","Длина и качество","長さと画質","时长与画质"}},
+ {"Clip length", {"Cliplänge","Duración del clip","Durée du clip","Durata della clip","Duração do clipe","Cliplengte","Długość klipu","Klip süresi","Длина клипа","クリップの長さ","剪辑时长"}},
+ {"Clip saved", {"Clip gespeichert","Clip guardado","Clip enregistré","Clip salvata","Clipe guardado","Clip opgeslagen","Klip zapisany","Klip kaydedildi","Клип сохранён","クリップを保存しました","剪辑已保存"}},
+ {"Clipline is still running in the background. Press %1 to save a clip.",
+  {"Clipline läuft weiter im Hintergrund. Drücke %1, um einen Clip zu speichern.",
+   "Clipline sigue funcionando en segundo plano. Pulsa %1 para guardar un clip.",
+   "Clipline continue en arrière-plan. Appuyez sur %1 pour enregistrer un clip.",
+   "Clipline è ancora attivo in background. Premi %1 per salvare una clip.",
+   "O Clipline continua a funcionar em segundo plano. Prima %1 para guardar um clipe.",
+   "Clipline draait nog op de achtergrond. Druk op %1 om een clip op te slaan.",
+   "Clipline nadal działa w tle. Naciśnij %1, aby zapisać klip.",
+   "Clipline arka planda çalışmaya devam ediyor. Klip kaydetmek için %1 tuşuna basın.",
+   "Clipline продолжает работать в фоне. Нажмите %1, чтобы сохранить клип.",
+   "Clipline はバックグラウンドで動作中です。%1 を押すとクリップを保存します。",
+   "Clipline 仍在后台运行。按 %1 保存剪辑。"}},
+ {"Clipline records your screen quietly in the background. Press a key and the last moments are saved as a clip – nothing is written to disk until you do.",
+  {"Clipline nimmt deinen Bildschirm leise im Hintergrund auf. Ein Tastendruck, und die letzten Momente werden als Clip gespeichert – vorher wird nichts auf die Festplatte geschrieben.",
+   "Clipline graba tu pantalla en silencio en segundo plano. Pulsa una tecla y los últimos momentos se guardan como clip; hasta entonces no se escribe nada en el disco.",
+   "Clipline enregistre votre écran discrètement en arrière-plan. Appuyez sur une touche et les derniers instants sont enregistrés en clip – rien n'est écrit sur le disque avant.",
+   "Clipline registra lo schermo in silenzio in background. Premi un tasto e gli ultimi momenti vengono salvati come clip: prima non viene scritto nulla sul disco.",
+   "O Clipline grava o seu ecrã discretamente em segundo plano. Prima uma tecla e os últimos momentos são guardados como clipe – nada é escrito no disco antes disso.",
+   "Clipline neemt je scherm stil op de achtergrond op. Druk op een toets en de laatste momenten worden als clip opgeslagen – daarvoor wordt niets naar de schijf geschreven.",
+   "Clipline po cichu nagrywa ekran w tle. Naciśnij klawisz, a ostatnie chwile zostaną zapisane jako klip – wcześniej nic nie trafia na dysk.",
+   "Clipline ekranınızı arka planda sessizce kaydeder. Bir tuşa basın, son anlar klip olarak kaydedilsin – o ana kadar diske hiçbir şey yazılmaz.",
+   "Clipline тихо записывает экран в фоне. Нажмите клавишу – и последние моменты сохранятся как клип. До этого на диск ничего не пишется.",
+   "Clipline はバックグラウンドで静かに画面を録画します。キーを押すと直前の瞬間がクリップとして保存され、それまではディスクに何も書き込みません。",
+   "Clipline 在后台安静地录制屏幕。按下按键，最近的精彩瞬间就会保存为剪辑——在此之前不会向磁盘写入任何内容。"}},
+ {"Clips folder", {"Clips-Ordner","Carpeta de clips","Dossier des clips","Cartella delle clip","Pasta de clipes","Clipsmap","Folder klipów","Klip klasörü","Папка клипов","クリップの保存先","剪辑文件夹"}},
+ {"Could not save the clip.", {"Der Clip konnte nicht gespeichert werden.","No se pudo guardar el clip.","Impossible d'enregistrer le clip.","Impossibile salvare la clip.","Não foi possível guardar o clipe.","De clip kon niet worden opgeslagen.","Nie udało się zapisać klipu.","Klip kaydedilemedi.","Не удалось сохранить клип.","クリップを保存できませんでした。","无法保存剪辑。"}},
+ {"Dark", {"Dunkel","Oscuro","Sombre","Scuro","Escuro","Donker","Ciemny","Koyu","Тёмная","ダーク","深色"}},
+ {"Detail", {"Detail","Detalle","Détail","Dettaglio","Detalhe","Detail","Szczegóły","Ayrıntı","Детализация","詳細度","细节"}},
+ {"Estimated RAM", {"Geschätzter RAM","RAM estimada","RAM estimée","RAM stimata","RAM estimada","Geschat RAM-gebruik","Szacowana pamięć RAM","Tahmini RAM","Оценка ОЗУ","推定メモリ使用量","预计内存"}},
+ {"Frame rate", {"Bildrate","Fotogramas por segundo","Images par seconde","Fotogrammi al secondo","Fotogramas por segundo","Beelden per seconde","Klatki na sekundę","Kare hızı","Частота кадров","フレームレート","帧率"}},
+ {"General", {"Allgemein","General","Général","Generale","Geral","Algemeen","Ogólne","Genel","Общие","一般","常规"}},
+ {"Global hotkeys are not available here. Bind the command \"clipline --save\" to a key in your system settings.",
+  {"Globale Hotkeys sind hier nicht verfügbar. Lege den Befehl \"clipline --save\" in den Systemeinstellungen auf eine Taste.",
+   "Aquí no hay atajos globales. Asigna el comando \"clipline --save\" a una tecla en los ajustes del sistema.",
+   "Les raccourcis globaux ne sont pas disponibles ici. Associez la commande \"clipline --save\" à une touche dans les réglages du système.",
+   "Le scorciatoie globali non sono disponibili qui. Assegna il comando \"clipline --save\" a un tasto nelle impostazioni di sistema.",
+   "Os atalhos globais não estão disponíveis aqui. Associe o comando \"clipline --save\" a uma tecla nas definições do sistema.",
+   "Globale sneltoetsen zijn hier niet beschikbaar. Koppel de opdracht \"clipline --save\" aan een toets in je systeeminstellingen.",
+   "Globalne skróty nie są tu dostępne. Przypisz polecenie \"clipline --save\" do klawisza w ustawieniach systemu.",
+   "Genel kısayollar burada kullanılamıyor. \"clipline --save\" komutunu sistem ayarlarından bir tuşa atayın.",
+   "Глобальные горячие клавиши здесь недоступны. Назначьте команду \"clipline --save\" на клавишу в настройках системы.",
+   "ここではグローバルホットキーを使えません。システム設定でコマンド \"clipline --save\" をキーに割り当ててください。",
+   "此处无法使用全局快捷键。请在系统设置中把命令 \"clipline --save\" 绑定到一个按键。"}},
+ {"High", {"Hoch","Alta","Élevée","Alta","Alta","Hoog","Wysoka","Yüksek","Высокое","高","高"}},
+ {"Hotkey & sound", {"Hotkey & Ton","Tecla y sonido","Raccourci et son","Tasto e audio","Tecla e som","Sneltoets & geluid","Skrót i dźwięk","Kısayol ve ses","Клавиша и звук","ホットキーと音声","快捷键与声音"}},
+ {"Language", {"Sprache","Idioma","Langue","Lingua","Idioma","Taal","Język","Dil","Язык","言語","语言"}},
+ {"Light", {"Hell","Claro","Clair","Chiaro","Claro","Licht","Jasny","Açık","Светлая","ライト","浅色"}},
+ {"Look", {"Aussehen","Apariencia","Apparence","Aspetto","Aspeto","Uiterlijk","Wygląd","Görünüm","Оформление","外観","外观"}},
+ {"Make it yours", {"Mach es zu deinem","Hazlo tuyo","À votre image","Rendilo tuo","Torne-o seu","Maak het van jou","Dopasuj do siebie","Kendinize göre ayarlayın","Настройте под себя","自分好みに","打造你的风格"}},
+ {"Microphone", {"Mikrofon","Micrófono","Microphone","Microfono","Microfone","Microfoon","Mikrofon","Mikrofon","Микрофон","マイク","麦克风"}},
+ {"Mode", {"Modus","Modo","Mode","Modalità","Modo","Modus","Tryb","Mod","Режим","モード","模式"}},
+ {"Move \"%1\" to the trash?", {"\"%1\" in den Papierkorb verschieben?","¿Mover \"%1\" a la papelera?","Mettre \"%1\" à la corbeille ?","Spostare \"%1\" nel cestino?","Mover \"%1\" para o lixo?","\"%1\" naar de prullenbak verplaatsen?","Przenieść \"%1\" do kosza?","\"%1\" çöp kutusuna taşınsın mı?","Переместить \"%1\" в корзину?","\"%1\" をごみ箱に移動しますか？","将 \"%1\" 移到回收站？"}},
+ {"Move to trash", {"In den Papierkorb","Mover a la papelera","Mettre à la corbeille","Sposta nel cestino","Mover para o lixo","Naar prullenbak","Przenieś do kosza","Çöp kutusuna taşı","В корзину","ごみ箱に移動","移到回收站"}},
+ {"Native", {"Nativ","Nativa","Native","Nativa","Nativa","Oorspronkelijk","Natywna","Yerel","Исходное","ネイティブ","原生"}},
+ {"New name:", {"Neuer Name:","Nuevo nombre:","Nouveau nom :","Nuovo nome:","Novo nome:","Nieuwe naam:","Nowa nazwa:","Yeni ad:","Новое имя:","新しい名前：","新名称："}},
+ {"Next", {"Weiter","Siguiente","Suivant","Avanti","Seguinte","Volgende","Dalej","İleri","Далее","次へ","下一步"}},
+ {"No clips yet", {"Noch keine Clips","Aún no hay clips","Pas encore de clips","Ancora nessuna clip","Ainda sem clipes","Nog geen clips","Brak klipów","Henüz klip yok","Клипов пока нет","まだクリップがありません","还没有剪辑"}},
+ {"None", {"Keins","Ninguno","Aucun","Nessuno","Nenhum","Geen","Brak","Yok","Нет","なし","无"}},
+ {"Not available on this system", {"Auf diesem System nicht verfügbar","No disponible en este sistema","Non disponible sur ce système","Non disponibile su questo sistema","Não disponível neste sistema","Niet beschikbaar op dit systeem","Niedostępne w tym systemie","Bu sistemde kullanılamıyor","Недоступно в этой системе","このシステムでは使用できません","此系统不可用"}},
+ {"Nothing recorded yet.", {"Noch nichts aufgenommen.","Aún no se ha grabado nada.","Rien n'a encore été enregistré.","Non è ancora stato registrato nulla.","Ainda não foi gravado nada.","Nog niets opgenomen.","Jeszcze nic nie nagrano.","Henüz bir şey kaydedilmedi.","Пока ничего не записано.","まだ何も録画されていません。","还没有录制任何内容。"}},
+ {"Open Clipline", {"Clipline öffnen","Abrir Clipline","Ouvrir Clipline","Apri Clipline","Abrir Clipline","Clipline openen","Otwórz Clipline","Clipline'ı aç","Открыть Clipline","Clipline を開く","打开 Clipline"}},
+ {"Open folder", {"Ordner öffnen","Abrir carpeta","Ouvrir le dossier","Apri cartella","Abrir pasta","Map openen","Otwórz folder","Klasörü aç","Открыть папку","フォルダーを開く","打开文件夹"}},
+ {"Pause recording", {"Aufnahme pausieren","Pausar grabación","Suspendre l'enregistrement","Metti in pausa la registrazione","Pausar gravação","Opname pauzeren","Wstrzymaj nagrywanie","Kaydı duraklat","Приостановить запись","録画を一時停止","暂停录制"}},
+ {"Paused", {"Pausiert","En pausa","En pause","In pausa","Em pausa","Gepauzeerd","Wstrzymano","Duraklatıldı","Приостановлено","一時停止中","已暂停"}},
+ {"Play a sound when a clip is saved", {"Ton abspielen, wenn ein Clip gespeichert wird","Reproducir un sonido al guardar un clip","Jouer un son quand un clip est enregistré","Riproduci un suono quando una clip viene salvata","Tocar um som ao guardar um clipe","Geluid afspelen als een clip is opgeslagen","Odtwórz dźwięk po zapisaniu klipu","Klip kaydedilince ses çal","Звук при сохранении клипа","クリップ保存時にサウンドを鳴らす","保存剪辑时播放提示音"}},
+ {"Play", {"Abspielen","Reproducir","Lire","Riproduci","Reproduzir","Afspelen","Odtwórz","Oynat","Воспроизвести","再生","播放"}},
+ {"Press %1 and the last %2 are saved here.", {"Drücke %1 und die letzten %2 landen hier.","Pulsa %1 y los últimos %2 se guardan aquí.","Appuyez sur %1 et les %2 derniers arrivent ici.","Premi %1 e gli ultimi %2 vengono salvati qui.","Prima %1 e os últimos %2 ficam guardados aqui.","Druk op %1 en de laatste %2 komen hier terecht.","Naciśnij %1, a ostatnie %2 trafią tutaj.","%1 tuşuna basın, son %2 buraya kaydedilir.","Нажмите %1 – последние %2 сохранятся здесь.","%1 を押すと直前の %2 がここに保存されます。","按 %1，最近的 %2 会保存到这里。"}},
+ {"Press keys…", {"Tasten drücken…","Pulsa las teclas…","Appuyez sur les touches…","Premi i tasti…","Prima as teclas…","Druk op toetsen…","Naciśnij klawisze…","Tuşlara basın…","Нажмите клавиши…","キーを押してください…","请按键…"}},
+ {"Quit", {"Beenden","Salir","Quitter","Esci","Sair","Afsluiten","Zakończ","Çıkış","Выход","終了","退出"}},
+ {"Recording failed to start:", {"Die Aufnahme konnte nicht starten:","No se pudo iniciar la grabación:","L'enregistrement n'a pas pu démarrer :","Impossibile avviare la registrazione:","Não foi possível iniciar a gravação:","De opname kon niet starten:","Nie udało się rozpocząć nagrywania:","Kayıt başlatılamadı:","Не удалось начать запись:","録画を開始できませんでした：","无法开始录制："}},
+ {"Recording", {"Nimmt auf","Grabando","Enregistrement","In registrazione","A gravar","Neemt op","Nagrywanie","Kaydediliyor","Идёт запись","録画中","正在录制"}},
+ {"Rename clip", {"Clip umbenennen","Renombrar clip","Renommer le clip","Rinomina clip","Mudar o nome do clipe","Clip hernoemen","Zmień nazwę klipu","Klibi yeniden adlandır","Переименовать клип","クリップの名前を変更","重命名剪辑"}},
+ {"Rename…", {"Umbenennen…","Renombrar…","Renommer…","Rinomina…","Mudar o nome…","Hernoemen…","Zmień nazwę…","Yeniden adlandır…","Переименовать…","名前を変更…","重命名…"}},
+ {"Resolution", {"Auflösung","Resolución","Résolution","Risoluzione","Resolução","Resolutie","Rozdzielczość","Çözünürlük","Разрешение","解像度","分辨率"}},
+ {"Resume recording", {"Aufnahme fortsetzen","Reanudar grabación","Reprendre l'enregistrement","Riprendi la registrazione","Retomar gravação","Opname hervatten","Wznów nagrywanie","Kayda devam et","Продолжить запись","録画を再開","继续录制"}},
+ {"Save clip", {"Clip speichern","Guardar clip","Enregistrer le clip","Salva clip","Guardar clipe","Clip opslaan","Zapisz klip","Klibi kaydet","Сохранить клип","クリップを保存","保存剪辑"}},
+ {"Save", {"Speichern","Guardar","Enregistrer","Salva","Guardar","Opslaan","Zapisz","Kaydet","Сохранить","保存","保存"}},
+ {"Screen", {"Bildschirm","Pantalla","Écran","Schermo","Ecrã","Scherm","Ekran","Ekran","Экран","画面","屏幕"}},
+ {"Settings", {"Einstellungen","Ajustes","Paramètres","Impostazioni","Definições","Instellingen","Ustawienia","Ayarlar","Настройки","設定","设置"}},
+ {"Show in folder", {"Im Ordner zeigen","Mostrar en la carpeta","Afficher dans le dossier","Mostra nella cartella","Mostrar na pasta","Tonen in map","Pokaż w folderze","Klasörde göster","Показать в папке","フォルダーで表示","在文件夹中显示"}},
+ {"Small", {"Klein","Pequeña","Petite","Piccola","Pequena","Klein","Mała","Küçük","Малое","小","小"}},
+ {"Sound", {"Ton","Sonido","Son","Audio","Som","Geluid","Dźwięk","Ses","Звук","音声","声音"}},
+ {"Start recording", {"Aufnahme starten","Empezar a grabar","Commencer l'enregistrement","Avvia la registrazione","Começar a gravar","Opname starten","Rozpocznij nagrywanie","Kaydı başlat","Начать запись","録画を開始","开始录制"}},
+ {"Start with the computer (runs in the background)", {"Mit dem Computer starten (läuft im Hintergrund)","Iniciar con el equipo (en segundo plano)","Démarrer avec l'ordinateur (en arrière-plan)","Avvia con il computer (in background)","Iniciar com o computador (em segundo plano)","Starten met de computer (op de achtergrond)","Uruchamiaj z komputerem (działa w tle)","Bilgisayarla başlat (arka planda çalışır)","Запускать вместе с компьютером (в фоне)","コンピューターと一緒に起動（バックグラウンド）","开机自动启动（后台运行）"}},
+ {"Starting…", {"Startet…","Iniciando…","Démarrage…","Avvio…","A iniciar…","Starten…","Uruchamianie…","Başlatılıyor…","Запуск…","起動中…","正在启动…"}},
+ {"System sound", {"Systemton","Sonido del sistema","Son du système","Audio di sistema","Som do sistema","Systeemgeluid","Dźwięk systemowy","Sistem sesi","Системный звук","システム音声","系统声音"}},
+ {"System", {"System","Sistema","Système","Sistema","Sistema","Systeem","Systemowy","Sistem","Системный","システム","跟随系统"}},
+ {"The audio device could not be opened. Recording continues without sound.",
+  {"Das Audiogerät konnte nicht geöffnet werden. Die Aufnahme läuft ohne Ton weiter.",
+   "No se pudo abrir el dispositivo de audio. La grabación continúa sin sonido.",
+   "Impossible d'ouvrir le périphérique audio. L'enregistrement continue sans son.",
+   "Impossibile aprire il dispositivo audio. La registrazione continua senza audio.",
+   "Não foi possível abrir o dispositivo de áudio. A gravação continua sem som.",
+   "Het audioapparaat kon niet worden geopend. De opname gaat verder zonder geluid.",
+   "Nie udało się otworzyć urządzenia audio. Nagrywanie trwa bez dźwięku.",
+   "Ses aygıtı açılamadı. Kayıt sessiz devam ediyor.",
+   "Не удалось открыть аудиоустройство. Запись продолжается без звука.",
+   "オーディオデバイスを開けませんでした。音声なしで録画を続けます。",
+   "无法打开音频设备。录制将在无声音的情况下继续。"}},
+ {"The hotkey %1 is already used by another program. Choose a different one in the settings.",
+  {"Der Hotkey %1 wird schon von einem anderen Programm benutzt. Wähle in den Einstellungen einen anderen.",
+   "Otro programa ya usa la tecla %1. Elige otra en los ajustes.",
+   "Le raccourci %1 est déjà utilisé par un autre programme. Choisissez-en un autre dans les paramètres.",
+   "Il tasto %1 è già usato da un altro programma. Scegline un altro nelle impostazioni.",
+   "A tecla %1 já é usada por outro programa. Escolha outra nas definições.",
+   "De sneltoets %1 wordt al door een ander programma gebruikt. Kies een andere in de instellingen.",
+   "Skrót %1 jest już używany przez inny program. Wybierz inny w ustawieniach.",
+   "%1 kısayolu başka bir program tarafından kullanılıyor. Ayarlardan farklı bir tane seçin.",
+   "Сочетание %1 уже занято другой программой. Выберите другое в настройках.",
+   "ホットキー %1 は他のプログラムで使用中です。設定で別のキーを選んでください。",
+   "快捷键 %1 已被其他程序占用。请在设置中选择其他按键。"}},
+ {"Welcome to Clipline", {"Willkommen bei Clipline","Bienvenido a Clipline","Bienvenue dans Clipline","Benvenuto in Clipline","Bem-vindo ao Clipline","Welkom bij Clipline","Witaj w Clipline","Clipline'a hoş geldiniz","Добро пожаловать в Clipline","Clipline へようこそ","欢迎使用 Clipline"}},
+ {"Where should your clips go?", {"Wo sollen deine Clips landen?","¿Dónde se guardan tus clips?","Où enregistrer vos clips ?","Dove salvare le clip?","Onde guardar os seus clipes?","Waar moeten je clips komen?","Gdzie zapisywać klipy?","Klipleriniz nereye kaydedilsin?","Куда сохранять клипы?","クリップの保存先は？","剪辑保存到哪里？"}},
+ {"Your clip key", {"Deine Clip-Taste","Tu tecla de clip","Votre touche de clip","Il tuo tasto per le clip","A sua tecla de clipe","Jouw cliptoets","Twój klawisz klipu","Klip tuşunuz","Ваша клавиша клипа","クリップキー","你的剪辑快捷键"}},
+ {"buffer", {"Puffer","búfer","tampon","buffer","buffer","buffer","bufor","arabellek","буфер","バッファ","缓冲"}},
+ {"last %1", {"letzte %1","últimos %1","dernières %1","ultimi %1","últimos %1","laatste %1","ostatnie %1","son %1","последние %1","直前 %1","最近 %1"}},
+};
 
-static const QHash<QString, QString>& german() {
-    static const QHash<QString, QString> h = {
-        {"Welcome to Clipline", "Willkommen bei Clipline"},
-        {"Clipline records your screen quietly in the background. Press a key and the last moments are saved as a clip – nothing is written to disk until you do.",
-         "Clipline nimmt deinen Bildschirm leise im Hintergrund auf. Ein Tastendruck, und die letzten Momente werden als Clip gespeichert – vorher wird nichts auf die Festplatte geschrieben."},
-        {"Clips folder", "Clips-Ordner"},
-        {"Where should your clips go?", "Wo sollen deine Clips landen?"},
-        {"Choose…", "Auswählen…"},
-        {"Language", "Sprache"},
-        {"System", "System"},
-        {"Clip length", "Cliplänge"},
-        {"How much should one clip contain?", "Wie viel soll ein Clip enthalten?"},
-        {"When you press the hotkey, everything from this long before is saved.", "Beim Drücken des Hotkeys wird alles aus dieser Zeit davor gespeichert."},
-        {"Estimated RAM", "Geschätzter RAM"},
-        {"buffer", "Puffer"},
-        {"Clipline keeps the recording in memory, so longer clips and higher quality need more RAM.",
-         "Clipline hält die Aufnahme im Arbeitsspeicher. Längere Clips und höhere Qualität brauchen mehr RAM."},
-        {"Quality", "Qualität"},
-        {"How should clips look?", "Wie sollen die Clips aussehen?"},
-        {"Screen", "Bildschirm"},
-        {"Resolution", "Auflösung"},
-        {"Frame rate", "Bildrate"},
-        {"Detail", "Detail"},
-        {"Small", "Klein"},
-        {"Balanced", "Ausgewogen"},
-        {"High", "Hoch"},
-        {"Native", "Nativ"},
-        {"System sound", "Systemton"},
-        {"Microphone", "Mikrofon"},
-        {"None", "Keins"},
-        {"Look & behaviour", "Aussehen & Verhalten"},
-        {"Make it yours", "Mach es zu deinem"},
-        {"Accent colour", "Akzentfarbe"},
-        {"Mode", "Modus"},
-        {"Dark", "Dunkel"},
-        {"Light", "Hell"},
-        {"Save hotkey", "Speicher-Hotkey"},
-        {"Start with the computer (runs in the background)", "Mit dem Computer starten (läuft im Hintergrund)"},
-        {"Play a sound when a clip is saved", "Ton abspielen, wenn ein Clip gespeichert wird"},
-        {"Back", "Zurück"},
-        {"Next", "Weiter"},
-        {"Start recording", "Aufnahme starten"},
-        {"Settings", "Einstellungen"},
-        {"General", "Allgemein"},
-        {"Save", "Speichern"},
-        {"Cancel", "Abbrechen"},
-        {"Save clip", "Clip speichern"},
-        {"Open folder", "Ordner öffnen"},
-        {"Open Clipline", "Clipline öffnen"},
-        {"Pause recording", "Aufnahme pausieren"},
-        {"Resume recording", "Aufnahme fortsetzen"},
-        {"Quit", "Beenden"},
-        {"Recording", "Nimmt auf"},
-        {"Paused", "Pausiert"},
-        {"Starting…", "Startet…"},
-        {"last %1", "letzte %1"},
-        {"Clip saved", "Clip gespeichert"},
-        {"Could not save the clip.", "Der Clip konnte nicht gespeichert werden."},
-        {"Nothing recorded yet.", "Noch nichts aufgenommen."},
-        {"Clipline is still running in the background. Press %1 to save a clip.",
-         "Clipline läuft weiter im Hintergrund. Drücke %1, um einen Clip zu speichern."},
-        {"No clips yet", "Noch keine Clips"},
-        {"Press %1 and the last %2 are saved here.", "Drücke %1 und die letzten %2 landen hier."},
-        {"%1 clips", "%1 Clips"},
-        {"1 clip", "1 Clip"},
-        {"Play", "Abspielen"},
-        {"Edit in Cutline", "In Cutline bearbeiten"},
-        {"Show in folder", "Im Ordner zeigen"},
-        {"Rename…", "Umbenennen…"},
-        {"Move to trash", "In den Papierkorb"},
-        {"Rename clip", "Clip umbenennen"},
-        {"New name:", "Neuer Name:"},
-        {"Move \"%1\" to the trash?", "\"%1\" in den Papierkorb verschieben?"},
-        {"Tip: install Cutline to trim and edit your clips.", "Tipp: Mit Cutline kannst du deine Clips schneiden und bearbeiten."},
-        {"Get Cutline", "Cutline holen"},
-        {"The hotkey %1 is already used by another program. Choose a different one in the settings.",
-         "Der Hotkey %1 wird schon von einem anderen Programm benutzt. Wähle in den Einstellungen einen anderen."},
-        {"Global hotkeys are not available here. Bind the command \"clipline --save\" to a key in your system settings.",
-         "Globale Hotkeys sind hier nicht verfügbar. Lege den Befehl \"clipline --save\" in den Systemeinstellungen auf eine Taste."},
-        {"The audio device could not be opened. Recording continues without sound.",
-         "Das Audiogerät konnte nicht geöffnet werden. Die Aufnahme läuft ohne Ton weiter."},
-        {"Recording failed to start:", "Die Aufnahme konnte nicht starten:"},
-        {"Not available on this system", "Auf diesem System nicht verfügbar"},
-        {"Press keys…", "Tasten drücken…"},
-        {"Encoder", "Encoder"},
-        {"CPU (x264)", "CPU (x264)"},
-        {"Primary", "Hauptbildschirm"},
-        {"About", "Über"},
-        {"Newest first", "Neueste zuerst"},
-        {"Clip length & quality", "Cliplänge & Qualität"},
-        {"Hotkey & sound", "Hotkey & Ton"},
-        {"Look", "Aussehen"},
-        {"Your clip key", "Deine Clip-Taste"},
-        {"Click the button and press the combination you want. Works everywhere, even in games.",
-         "Klick auf den Knopf und drück die gewünschte Kombination. Funktioniert überall, auch in Spielen."},
-        {"Sound", "Ton"},
-    };
+int g_lang = 0;  // 0 = Englisch
+
+const QHash<QString, const Entry*>& index() {
+    static const QHash<QString, const Entry*> h = [] {
+        QHash<QString, const Entry*> m;
+        for (const Entry& e : kTable) m.insert(QString::fromUtf8(e.en), &e);
+        return m;
+    }();
     return h;
 }
+}  // namespace
+
+QStringList languageCodes() {
+    QStringList l;
+    for (const char* c : kCodes) l << c;
+    return l;
+}
+
+QStringList languageNames() {
+    QStringList l;
+    for (const char* c : kNames) l << QString::fromUtf8(c);
+    return l;
+}
+
+void setLanguage(const QString& code) {
+    const QString c = code.isEmpty() ? QLocale::system().name().left(2) : code;
+    const int i = languageCodes().indexOf(c);
+    g_lang = i < 0 ? 0 : i;
+}
+
+QString language() { return kCodes[g_lang]; }
 
 QString L(const char* english) {
     const QString key = QString::fromUtf8(english);
-    if (g_lang == "de") {
-        auto it = german().constFind(key);
-        if (it != german().constEnd()) return *it;
-    }
-    return key;
+    if (g_lang == 0) return key;
+    auto it = index().constFind(key);
+    return it == index().constEnd() ? key : QString::fromUtf8((*it)->t[g_lang - 1]);
 }

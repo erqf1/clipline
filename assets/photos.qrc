@@ -1,7 +1,7 @@
 <RCC>
     <qresource prefix="/photos">
-        <file alias="bird.jpg">photos/bird.jpg</file>
-        <file alias="valley.jpg">photos/valley.jpg</file>
-        <file alias="falls.jpg">photos/falls.jpg</file>
+        <file alias="nest.jpg">photos/nest.jpg</file>
+        <file alias="kingfisher.jpg">photos/kingfisher.jpg</file>
+        <file alias="hedgehog.jpg">photos/hedgehog.jpg</file>
     </qresource>
 </RCC>

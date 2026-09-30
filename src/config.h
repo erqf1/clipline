@@ -2,8 +2,7 @@
 #include <QSize>
 #include <QString>
 
-// Alle Einstellungen von Clipline. Gespeichert per QSettings("WSoftware", "Clipline"),
-// damit Cutline den Clips-Ordner finden kann.
+// Alle Einstellungen von Clipline, gespeichert per QSettings("WSoftware", "Clipline").
 struct Config {
     QString clipsDir;
     int clipSeconds = 60;

@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(Clipline VERSION 1.0.2 LANGUAGES CXX)
+project(Clipline VERSION 1.1.0 LANGUAGES CXX)
 if(WIN32)
     enable_language(RC)
 endif()
