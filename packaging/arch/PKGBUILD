@@ -1,0 +1,26 @@
+# Maintainer: Clipline contributors
+pkgname=clipline
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Save the last moments of your screen with one key"
+arch=('x86_64')
+url="https://github.com/erqf1/clipline"
+license=('MIT')
+depends=('qt6-base' 'ffmpeg' 'libx11')
+makedepends=('cmake' 'ninja')
+options=('!debug')
+# CI packt den Quellbaum als clipline-src.tar.gz
+source=("clipline-src.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir"
+  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+}
+
+package() {
+  cd "$srcdir"
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

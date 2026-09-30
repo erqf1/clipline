@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Clipline
+GenericName=Screen Clipper
+Comment=Save the last moments of your screen with one key
+Exec=clipline
+Icon=clipline
+Terminal=false
+Categories=AudioVideo;Video;Recorder;
+Keywords=clip;record;replay;screen;game;
