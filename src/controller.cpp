@@ -7,6 +7,7 @@
 #include <QLocalSocket>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTimer>
 #include "gallery.h"
 #include "i18n.h"
 #include "look.h"
@@ -28,12 +29,35 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     menu_.addSeparator();
     menu_.addAction(L("Open folder"), this, [this] { revealInFolder(cfg_.clipsDir); });
     menu_.addAction(L("Settings"), this, &Controller::openSettings);
+    menu_.addAction(L("Check for updates"), this, [this] { if (updater_) updater_->check(true); });
     menu_.addSeparator();
     menu_.addAction(L("Quit"), this, &Controller::quit);
     connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
         if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick) showGallery();
     });
     connect(&tray_, &QSystemTrayIcon::messageClicked, this, &Controller::showGallery);
+
+    // Updates: nach dem Start und dann täglich still prüfen; fragt nur bei neuer, nicht ignorierter Version
+    if (!quiet) {
+        Updater::Options uo;
+        uo.repo = "erqf1/clipline";
+        uo.appName = "Clipline";
+        uo.version = APP_VERSION;
+        uo.parent = [this]() -> QWidget* { return gallery_; };
+        uo.texts = [] {
+            return UpdaterTexts{L("Update available"),
+                                L("%1 %2 is available (you have %3). Update now? The app restarts afterwards."),
+                                L("Update now"), L("Ignore this update"), L("Later"), L("Downloading update…"),
+                                L("The update couldn't be installed automatically. The download page opens instead."),
+                                L("You're using the latest version."), L("Cancel")};
+        };
+        uo.quit = [this] { quit(); };
+        updater_ = new Updater(uo, this);
+        QTimer::singleShot(15000, this, [this] { updater_->check(false); });
+        auto* daily = new QTimer(this);
+        connect(daily, &QTimer::timeout, this, [this] { updater_->check(false); });
+        daily->start(24 * 3600 * 1000);
+    }
 
     connect(&hotkey_, &GlobalHotkey::activated, this, &Controller::saveClip);
     connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);

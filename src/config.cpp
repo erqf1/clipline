@@ -80,6 +80,12 @@ double estimateTotalMB(const Config& c, QSize native) {
     return estimateBufferMB(c, native) + 30 + encoder;
 }
 
+// Gespeicherter Clip = genau die Cliplänge aus dem Puffer, ohne Neukodierung (plus etwas MP4-Verwaltung)
+double estimateClipMB(const Config& c, QSize native) {
+    const double audio = (c.systemAudio || !c.mic.isEmpty()) ? 160e3 : 0;
+    return (videoBitrate(c, native) + audio) / 8.0 * c.clipSeconds * 1.01 / 1048576.0;
+}
+
 QString fmtDuration(int s) {
     if (s < 60) return QString("%1 s").arg(s);
     if (s % 60 == 0) return QString("%1 min").arg(s / 60);

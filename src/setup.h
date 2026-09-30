@@ -81,7 +81,7 @@ private:
 
     Config cfg_;
     QList<Monitor> monitors_;
-    QLabel *ramLabel_ = nullptr, *ramDetail_ = nullptr, *lenLabel_ = nullptr;
+    QLabel *ramLabel_ = nullptr, *ramDetail_ = nullptr, *lenLabel_ = nullptr, *diskLabel_ = nullptr;
     QProgressBar* ramBar_ = nullptr;
     QComboBox *res_ = nullptr, *fps_ = nullptr;
     QualityPreview* preview_ = nullptr;

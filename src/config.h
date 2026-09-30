@@ -29,5 +29,6 @@ QSize captureSize(const Config& c, QSize native);
 double videoBitrate(const Config& c, QSize native);      // bit/s
 double estimateBufferMB(const Config& c, QSize native);  // Ringpuffer im RAM
 double estimateTotalMB(const Config& c, QSize native);   // Puffer + Programm + Encoder
+double estimateClipMB(const Config& c, QSize native);  // Dateigröße eines gespeicherten Clips
 QString fmtDuration(int seconds);
 QString fmtMB(double mb);

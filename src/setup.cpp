@@ -54,7 +54,7 @@ struct Photo {
 // Erinaceus roumanicus – George Chernilevsky, public domain
 const Photo kPhotos[] = {{":/photos/nest.jpg", 0.47, 0.45}, {":/photos/kingfisher.jpg", 0.36, 0.46}, {":/photos/hedgehog.jpg", 0.42, 0.60}};
 constexpr int kPhotoCount = 3;
-constexpr double kZoom = 1920.0 / 640.0;  // Ausschnitt = 1/3 der Breite -> wie 1080p-Vollbild in Originalgröße
+constexpr double kZoom = 1.0;  // ganzes Bild in der echten Aufnahmeauflösung (kein Ausschnitt)
 }  // namespace
 
 QualityPreview::QualityPreview(QWidget* parent) : QWidget(parent) {
@@ -254,6 +254,7 @@ void ConfigPages::updateRam() {
     const double total = estimateTotalMB(cfg_, n), buf = estimateBufferMB(cfg_, n);
     if (ramLabel_) ramLabel_->setText("≈ " + fmtMB(total));
     if (ramBar_) ramBar_->setValue(int(std::min(2048.0, total)));
+    if (diskLabel_) diskLabel_->setText("≈ " + fmtMB(estimateClipMB(cfg_, n)));
     if (ramDetail_)
         ramDetail_->setText(QString("%1 %2 · %3×%4 · %5 fps · %6 Mbit/s")
                                 .arg(L("buffer")).arg(fmtMB(buf)).arg(s.width()).arg(s.height()).arg(cfg_.fps)
@@ -394,6 +395,13 @@ QWidget* ConfigPages::recordingPage() {
     ramBar_->setTextVisible(false);
     ramBar_->setFixedHeight(8);
     bv->addWidget(ramBar_);
+    auto* disk = new QHBoxLayout;
+    disk->addWidget(label(L("Size per clip"), "muted"));
+    disk->addStretch();
+    diskLabel_ = new QLabel;
+    diskLabel_->setObjectName("h2");
+    disk->addWidget(diskLabel_);
+    bv->addLayout(disk);
     ramDetail_ = label(QString(), "muted");
     bv->addWidget(ramDetail_);
     v->addWidget(box);

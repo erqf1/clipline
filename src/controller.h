@@ -7,6 +7,7 @@
 #include "config.h"
 #include "platform.h"
 #include "recorder.h"
+#include "updater.h"
 
 class GalleryWindow;
 
@@ -35,6 +36,7 @@ public slots:
     void quit();
 
 private:
+    Updater* updater_ = nullptr;
     void applyConfig(const Config& c, bool first);
     void registerHotkey();
     void refreshTray();

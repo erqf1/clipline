@@ -50,8 +50,8 @@ On Windows, `build.bat` builds and creates the portable zip. Release packages fo
 
 ## Photo credits
 
-Quality preview photos (bundled in the app and on the website, from Wikimedia Commons): *Baltimore Oriole chicks in NY* – Juliancolton, public domain · *Eisvogel kingfisher* – Frank-2.0, CC0 · *Erinaceus roumanicus* – George Chernilevsky, public domain.
+Quality preview photos (bundled in the app, from Wikimedia Commons): *Baltimore Oriole chicks in NY* – Juliancolton, public domain · *Eisvogel kingfisher* – Frank-2.0, CC0 · *Erinaceus roumanicus* – George Chernilevsky, public domain.
 
 ## License
 
-MIT for the Clipline source code. Release packages bundle [FFmpeg](https://ffmpeg.org) (GPL build) and [Qt](https://www.qt.io) (LGPLv3), which keep their own licenses.
+Apache License 2.0 for the Clipline source code. Release packages bundle [FFmpeg](https://ffmpeg.org) (GPL build) and [Qt](https://www.qt.io) (LGPLv3), which keep their own licenses.

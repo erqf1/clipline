@@ -1,5 +1,5 @@
-﻿cmake_minimum_required(VERSION 3.21)
-project(Clipline VERSION 1.1.1 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.21)
+project(Clipline VERSION 1.2.0 LANGUAGES CXX)
 if(WIN32)
     enable_language(RC)
 endif()
@@ -21,6 +21,7 @@ set(CLIPLINE_SOURCES
     src/setup.h src/setup.cpp
     src/gallery.h src/gallery.cpp
     src/controller.h src/controller.cpp
+    src/updater.h src/updater.cpp
     assets/photos.qrc
 )
 
@@ -51,6 +52,7 @@ else()
 endif()
 
 target_link_libraries(clipline PRIVATE Qt6::Widgets Qt6::Network)
+target_compile_definitions(clipline PRIVATE APP_VERSION="${PROJECT_VERSION}")
 if(MSVC)
     target_compile_options(clipline PRIVATE /utf-8 /W3 /Zc:__cplusplus)
 endif()
