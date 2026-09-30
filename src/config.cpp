@@ -23,6 +23,7 @@ Config Config::load() {
     c.quality = s.value("quality", c.quality).toInt();
     c.systemAudio = s.value("systemAudio", c.systemAudio).toBool();
     c.mic = s.value("mic", c.mic).toString();
+    c.micGate = std::clamp(s.value("micGate", c.micGate).toInt(), -80, -10);
     c.hotkey = s.value("hotkey", c.hotkey).toString();
     c.accent = s.value("accent", c.accent).toString();
     c.dark = s.value("dark", c.dark).toBool();
@@ -43,6 +44,7 @@ void Config::save() const {
     s.setValue("quality", quality);
     s.setValue("systemAudio", systemAudio);
     s.setValue("mic", mic);
+    s.setValue("micGate", micGate);
     s.setValue("hotkey", hotkey);
     s.setValue("accent", accent);
     s.setValue("dark", dark);

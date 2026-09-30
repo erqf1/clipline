@@ -123,6 +123,8 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         auto* tabs = dlg.findChild<QTabWidget*>();
         tabs->setCurrentIndex(1);
         shot(&dlg, "settings");
+        tabs->setCurrentIndex(2);
+        shot(&dlg, "settings_sound");
     }
     Controller::noRecord = secs <= 0;
     Controller ctl(cfg);

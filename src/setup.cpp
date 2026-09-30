@@ -14,12 +14,64 @@
 #include <QPainterPath>
 #include <QRandomGenerator>
 #include <QScreen>
+#include <QSlider>
 #include <QStyle>
 #include <cmath>
 #include <QTabWidget>
 #include <QVBoxLayout>
 #include "i18n.h"
 #include "look.h"
+
+// ---------------------------------------------------------------- Mikrofon-Pegel
+static constexpr double kMeterMin = -80.0;
+
+MicMeter::MicMeter(QWidget* parent) : QWidget(parent) {
+    setMinimumHeight(16);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    timer_.setInterval(50);
+    connect(&timer_, &QTimer::timeout, this, [this] { update(); });
+}
+
+void MicMeter::setDevice(const QString& mic) {
+    device_ = mic;
+    meter_.stop();
+    timer_.stop();
+    if (isVisible() && !device_.isEmpty() && meter_.start(device_)) timer_.start();
+    update();
+}
+
+void MicMeter::setThreshold(int db) {
+    threshold_ = db;
+    update();
+}
+
+void MicMeter::showEvent(QShowEvent*) { setDevice(device_); }
+
+void MicMeter::hideEvent(QHideEvent*) {
+    meter_.stop();
+    timer_.stop();
+}
+
+void MicMeter::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    auto xOf = [&](double db) { return r.left() + (std::clamp(db, kMeterMin, 0.0) - kMeterMin) / -kMeterMin * r.width(); };
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(128, 128, 128, 45));
+    p.drawRoundedRect(r, 4, 4);
+    const double level = timer_.isActive() ? meter_.levelDb() : kMeterMin;
+    const bool open = threshold_ <= -80 || level > threshold_;
+    QRectF fill = r;
+    fill.setRight(xOf(level));
+    p.setBrush(open ? QColor("#35c46a") : QColor(140, 140, 140, 150));
+    p.drawRoundedRect(fill, 4, 4);
+    if (threshold_ > -80) {
+        const double x = xOf(threshold_);
+        p.setBrush(accent_);
+        p.drawRoundedRect(QRectF(x - 1.5, r.top() - 1, 3, r.height() + 2), 1.5, 1.5);
+    }
+}
 
 static const int kLengths[] = {10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 420, 600};
 static constexpr int kLengthCount = int(sizeof(kLengths) / sizeof(kLengths[0]));
@@ -444,8 +496,47 @@ QWidget* ConfigPages::hotkeyPage() {
     mic->setCurrentIndex(std::max(0, mic->findData(cfg_.mic)));
     form->addRow(L("Microphone"), mic);
     v->addLayout(form);
+
+    // Empfindlichkeit: Rauschsperre mit Live-Pegel, damit Hintergrundgeräusche nicht im Clip landen
+    auto* sens = new QWidget;
+    auto* sv = new QVBoxLayout(sens);
+    sv->setContentsMargins(0, 6, 0, 0);
+    sv->setSpacing(6);
+    auto* sensTitle = label(QString());
+    sv->addWidget(sensTitle);
+    auto* meter = new MicMeter;
+    meter->setAccent(makePalette(cfg_.accent, cfg_.dark).accent);
+    sv->addWidget(meter);
+    auto* gate = new QSlider(Qt::Horizontal);
+    gate->setRange(-80, -10);
+    gate->setValue(cfg_.micGate);
+    sv->addWidget(gate);
+    auto* ends = new QHBoxLayout;
+    ends->addWidget(label(L("Record everything"), "muted"));
+    ends->addStretch();
+    auto* endR = label(L("Only loud voices"), "muted");
+    endR->setAlignment(Qt::AlignRight);
+    ends->addWidget(endR);
+    sv->addLayout(ends);
+    sv->addWidget(label(L("Talk normally: the bar should turn green when you speak and stay grey when you are quiet. "
+                          "Everything below the line is muted, so background noise stays out of your clips."), "muted"));
+    v->addWidget(sens);
+    auto showGate = [sensTitle, meter](int db) {
+        sensTitle->setText("<b>" + L("Microphone sensitivity") + "</b>  " + (db <= -80 ? L("Off") : QString("%1 dB").arg(db)));
+        meter->setThreshold(db);
+    };
+    showGate(cfg_.micGate);
+    sens->setVisible(!cfg_.mic.isEmpty());
+    meter->setDevice(cfg_.mic);
+    connect(gate, &QSlider::valueChanged, this, [this, showGate](int db) { cfg_.micGate = db; showGate(db); emit changed(); });
+
     connect(sys, &QCheckBox::toggled, this, [this](bool on) { cfg_.systemAudio = on; emit changed(); });
-    connect(mic, &QComboBox::currentIndexChanged, this, [this, mic] { cfg_.mic = mic->currentData().toString(); emit changed(); });
+    connect(mic, &QComboBox::currentIndexChanged, this, [this, mic, sens, meter] {
+        cfg_.mic = mic->currentData().toString();
+        sens->setVisible(!cfg_.mic.isEmpty());
+        meter->setDevice(cfg_.mic);
+        emit changed();
+    });
     v->addSpacing(10);
 
     auto* autostart = new QCheckBox(L("Start with the computer (runs in the background)"));

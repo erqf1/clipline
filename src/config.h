@@ -11,7 +11,8 @@ struct Config {
     int fps = 60;
     int quality = 1;          // 0 = klein, 1 = ausgewogen, 2 = hoch
     bool systemAudio = true;
-    QString mic;              // ffmpeg-Gerätename, leer = kein Mikrofon
+    QString mic;              // Gerätename, leer = kein Mikrofon
+    int micGate = -45;        // Rauschsperre in dB: leiser wird stummgeschaltet, <= -80 = aus
     QString hotkey = "Ctrl+Alt+S";
     QString accent = "#ff4d6d";
     bool dark = true;

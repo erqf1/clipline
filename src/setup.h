@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QTimer>
 #include "config.h"
 #include "platform.h"
 
@@ -57,6 +58,28 @@ private:
     int height_ = 1080, native_ = 1080, index_ = 0, hover_ = 0;
     QImage cached_;
     int cachedH_ = -1, cachedIdx_ = -1;
+};
+
+// Live-Pegel des Mikrofons mit der Schwelle der Rauschsperre: grün = kommt in den Clip,
+// grau = wird als Hintergrundgeräusch stummgeschaltet
+class MicMeter : public QWidget {
+public:
+    explicit MicMeter(QWidget* parent = nullptr);
+    void setDevice(const QString& mic);
+    void setThreshold(int db);
+    void setAccent(const QColor& c) { accent_ = c; update(); }
+
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void showEvent(QShowEvent*) override;
+    void hideEvent(QHideEvent*) override;
+
+private:
+    MicLevelMeter meter_;
+    QTimer timer_;
+    QString device_;
+    int threshold_ = -45;
+    QColor accent_ = QColor("#ff4d6d");
 };
 
 // Die vier Einstellungsseiten. Werden vom Ersteinrichtungs-Assistenten nacheinander

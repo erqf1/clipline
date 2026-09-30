@@ -1,6 +1,7 @@
 #include "recorder.h"
 
 #include <QDateTime>
+#include <cmath>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -106,6 +107,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     QStringList a = {"-hide_banner", "-loglevel", "error"};
     QString vpre;            // Filter vor der Skalierung
     int audioInputs = 0;
+    int micInput = -1;  // Eingang mit dem Mikrofon, falls ffmpeg es selbst einliest (macOS/Linux)
     bool audioInVideoInput = false;
 
 #if defined(Q_OS_WIN)
@@ -118,29 +120,30 @@ QStringList Recorder::buildArgs(bool withAudio) {
           << QString::number(mon.rect.x()) << "-offset_y" << QString::number(mon.rect.y()) << "-video_size"
           << QString("%1x%2").arg(mon.rect.width()).arg(mon.rect.height()) << "-i" << "desktop";
     }
-    if (withAudio && cfg_.systemAudio) {
+    // Systemton + Mikrofon mischt Clipline selbst: ffmpeg bekommt nur EINE Tonquelle. Zwei getrennte
+    // Echtzeit-Quellen (Loopback + DirectShow-Mikrofon) bremsten die Bildschirmaufnahme auf ~1 fps.
+    if (withAudio && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
         sysAudio_ = std::make_unique<SystemAudioPipe>();
-        QString fmt;
-        int rate = 48000, ch = 2;
-        if (sysAudio_->prepare(&fmt, &rate, &ch)) {
-            a << "-thread_queue_size" << "1024" << "-f" << fmt << "-ar" << QString::number(rate) << "-ac"
-              << QString::number(ch) << "-i" << sysAudio_->pipePath();
+        MicTuning tuning;
+        tuning.gateDb = cfg_.micGate;
+        if (sysAudio_->prepare(cfg_.systemAudio, cfg_.mic, tuning)) {
+            a << "-thread_queue_size" << "1024" << "-f" << SystemAudioPipe::ffmpegFormat() << "-ar"
+              << QString::number(SystemAudioPipe::rate()) << "-ac" << QString::number(SystemAudioPipe::channels()) << "-i"
+              << sysAudio_->pipePath();
             ++audioInputs;
         } else {
             sysAudio_.reset();
         }
-    }
-    if (withAudio && !cfg_.mic.isEmpty()) {
-        a << "-thread_queue_size" << "1024" << "-f" << "dshow" << "-audio_buffer_size" << "50" << "-i"
-          << "audio=" + cfg_.mic;
-        ++audioInputs;
     }
 #elif defined(Q_OS_MAC)
     int micIdx = -1;
     if (withAudio && !cfg_.mic.isEmpty()) micIdx = listMicrophones().indexOf(cfg_.mic);
     a << "-f" << "avfoundation" << "-capture_cursor" << "1" << "-framerate" << fps << "-pixel_format" << "nv12"
       << "-i" << QString("%1:%2").arg(std::max(0, mon.avIndex)).arg(micIdx >= 0 ? QString::number(micIdx) : "none");
-    if (micIdx >= 0) audioInVideoInput = true;
+    if (micIdx >= 0) {
+        audioInVideoInput = true;
+        micInput = 0;
+    }
 #else
     const QString display = qEnvironmentVariable("DISPLAY", ":0");
     a << "-f" << "x11grab" << "-framerate" << fps << "-draw_mouse" << "1" << "-video_size"
@@ -152,7 +155,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     }
     if (withAudio && !cfg_.mic.isEmpty()) {
         a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-i" << cfg_.mic;
-        ++audioInputs;
+        micInput = ++audioInputs;
     }
 #endif
 
@@ -161,13 +164,26 @@ QStringList Recorder::buildArgs(bool withAudio) {
     if (out != native) vf += QString("scale=%1:%2:flags=bicubic,").arg(out.width()).arg(out.height());
     vf += encoder_ == "libx264" ? "format=yuv420p" : "format=nv12";
     QStringList fc = {QString("[0:v]%1[v]").arg(vf)};
+    // Rauschsperre fürs Mikrofon (unter Windows macht das der Ton-Mischer selbst)
+    const QString gate = cfg_.micGate > -80
+        ? QString("agate=threshold=%1:ratio=20:attack=5:release=120:range=0.001").arg(std::pow(10.0, cfg_.micGate / 20.0), 0, 'f', 6)
+        : QString();
+    auto src = [&](int input) {
+        if (input == micInput && !gate.isEmpty()) {
+            fc << QString("[%1:a]%2[m%1]").arg(input).arg(gate);
+            return QString("[m%1]").arg(input);
+        }
+        return QString("%1:a").arg(input);
+    };
     QString amap;
     if (audioInVideoInput) {
-        amap = "0:a";
+        amap = src(0);
     } else if (audioInputs == 1) {
-        amap = "1:a";
+        amap = src(1);
     } else if (audioInputs == 2) {
-        fc << "[1:a][2:a]amix=inputs=2:duration=longest:normalize=0[a]";
+        const QString x = src(1), y = src(2);
+        auto lbl = [](const QString& l) { return l.startsWith('[') ? l : "[" + l + "]"; };
+        fc << QString("%1%2amix=inputs=2:duration=longest:normalize=0[a]").arg(lbl(x), lbl(y));
         amap = "[a]";
     }
     a << "-filter_complex" << fc.join(";") << "-map" << "[v]";

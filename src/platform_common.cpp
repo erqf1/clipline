@@ -59,10 +59,18 @@ void revealInFolder(const QString& path) {
 struct SystemAudioPipe::Impl {};
 SystemAudioPipe::SystemAudioPipe() : d(new Impl) {}
 SystemAudioPipe::~SystemAudioPipe() = default;
-bool SystemAudioPipe::prepare(QString*, int*, int*) { return false; }
+bool SystemAudioPipe::prepare(bool, const QString&, const MicTuning&) { return false; }
 QString SystemAudioPipe::pipePath() const { return QString(); }
 void SystemAudioPipe::start() {}
 void SystemAudioPipe::stop() {}
+
+struct MicLevelMeter::Impl {};
+MicLevelMeter::MicLevelMeter() : d(new Impl) {}
+MicLevelMeter::~MicLevelMeter() = default;
+bool MicLevelMeter::start(const QString&) { return false; }
+void MicLevelMeter::stop() {}
+float MicLevelMeter::levelDb() const { return -90.f; }
+bool micMeterSupported() { return false; }
 #endif
 
 #ifndef Q_OS_WIN
