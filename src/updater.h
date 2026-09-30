@@ -35,6 +35,7 @@ public:
         std::function<QWidget*()> parent;  // Elternfenster für Dialoge (darf nullptr liefern)
         std::function<bool()> beforeInstall;  // optional: false = nicht beenden (z. B. ungespeicherte Arbeit)
         std::function<void()> quit;           // optional: sauber beenden (sonst QCoreApplication::quit)
+        QString innoAppId;                    // Windows: AppId des Installers (ohne {}), erkennt "alle Benutzer" / "nur ich"
     };
 
     explicit Updater(Options o, QObject* parent = nullptr);
@@ -44,7 +45,7 @@ public:
 private:
     void onRelease(const QJsonObject& rel, bool manual);
     QString pickAsset(const QJsonObject& rel, QString* url) const;
-    void download(const QString& url, const QString& name, const QString& page);
+    void download(const QString& url, const QString& name, const QString& page, const QString& tag);
     bool launchInstaller(const QString& file);
     void fail(const QString& page);
 

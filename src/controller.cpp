@@ -43,6 +43,7 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
         uo.repo = "erqf1/clipline";
         uo.appName = "Clipline";
         uo.version = APP_VERSION;
+        uo.innoAppId = "4F2C9A61-7D3B-4E8A-A5C2-9B1E6D0F3A77";  // packaging/windows/clipline.iss
         uo.parent = [this]() -> QWidget* { return gallery_; };
         uo.texts = [] {
             return UpdaterTexts{L("Update available"),

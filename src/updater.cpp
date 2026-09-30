@@ -40,6 +40,20 @@ bool dirWritable(const QString& dir) {
     f.remove();
     return true;
 }
+
+#if defined(Q_OS_WIN)
+// Wie wurde installiert? Inno Setup trägt sich unter HKLM (alle Benutzer) oder HKCU (nur ich) ein.
+// Mit dem falschen Modus findet das Setup die alte Installation nicht und installiert woanders hin.
+QString installScope(const QString& appId, const QString& appDir) {
+    if (!appId.isEmpty()) {
+        const QString key = QString("\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}_is1").arg(appId);
+        for (auto fmt : {QSettings::Registry64Format, QSettings::Registry32Format})
+            if (QSettings("HKEY_LOCAL_MACHINE" + key, fmt).contains("UninstallString")) return "/ALLUSERS";
+        if (QSettings("HKEY_CURRENT_USER" + key, QSettings::NativeFormat).contains("UninstallString")) return "/CURRENTUSER";
+    }
+    return dirWritable(appDir) ? "/CURRENTUSER" : "/ALLUSERS";
+}
+#endif
 }  // namespace
 
 Updater::Updater(Options o, QObject* parent) : QObject(parent), o_(std::move(o)), net_(new QNetworkAccessManager(this)) {
@@ -75,6 +89,13 @@ void Updater::onRelease(const QJsonObject& rel, bool manual) {
     const QString page = rel.value("html_url").toString();
     const bool newer = QVersionNumber::fromString(ver) > QVersionNumber::fromString(o_.version);
     QSettings st;
+    // Letzter Versuch, genau diese Version zu installieren, hat nicht geklappt: nicht wieder
+    // "Jetzt updaten" anbieten (Endlosschleife), sondern ehrlich sagen und die Download-Seite öffnen
+    const QString attempted = st.value("update/attempted").toString();
+    if (!attempted.isEmpty()) {
+        st.remove("update/attempted");
+        if (newer && attempted == tag) return fail(page);
+    }
     if (!newer) {
         if (manual) QMessageBox::information(parent, o_.appName, tx.upToDate);
         return;
@@ -103,7 +124,7 @@ void Updater::onRelease(const QJsonObject& rel, bool manual) {
     QString url;
     const QString name = pickAsset(rel, &url);
     if (name.isEmpty()) return fail(page);
-    download(url, name, page);
+    download(url, name, page, tag);
 }
 
 // Passendes Paket für dieses System und diese Installationsart
@@ -139,7 +160,7 @@ QString Updater::pickAsset(const QJsonObject& rel, QString* url) const {
     return QString();
 }
 
-void Updater::download(const QString& url, const QString& name, const QString& page) {
+void Updater::download(const QString& url, const QString& name, const QString& page, const QString& tag) {
     const UpdaterTexts tx = o_.texts();
     const QString dir = QDir::temp().filePath(o_.appName.toLower() + "-update");
     QDir().mkpath(dir);
@@ -161,7 +182,7 @@ void Updater::download(const QString& url, const QString& name, const QString& p
         if (total > 0) dlg->setValue(int(got * 1000 / total));
     });
     connect(dlg, &QProgressDialog::canceled, r, &QNetworkReply::abort);
-    connect(r, &QNetworkReply::finished, this, [this, r, file, dlg, path, page] {
+    connect(r, &QNetworkReply::finished, this, [this, r, file, dlg, path, page, tag] {
         r->deleteLater();
         const bool cancelled = dlg->wasCanceled();
         dlg->close();
@@ -171,6 +192,7 @@ void Updater::download(const QString& url, const QString& name, const QString& p
         if (cancelled) { QFile::remove(path); return; }
         if (r->error() != QNetworkReply::NoError || file->size() < 1024) { QFile::remove(path); return fail(page); }
         if (!launchInstaller(path)) return fail(page);
+        QSettings().setValue("update/attempted", tag);
         QTimer::singleShot(0, qApp, [this] { o_.quit ? o_.quit() : QCoreApplication::quit(); });
     });
 }
@@ -187,13 +209,18 @@ bool Updater::launchInstaller(const QString& file) {
     QString args;
     for (const QString& a : o_.relaunchArgs) args += (args.isEmpty() ? "" : ",") + pq(a);
     QStringList s;
+    const QString log = pq(QDir::toNativeSeparators(tmp + "/update.log"));
     s << "$ErrorActionPreference = 'SilentlyContinue'"
-      << QString("Wait-Process -Id %1 -Timeout 60").arg(pid);
+      << QString("Wait-Process -Id %1 -Timeout 20").arg(pid)
+      // Hängt die alte App noch (z. B. ein Dialog), hart beenden - sonst sind ihre Dateien gesperrt
+      << QString("if (Get-Process -Id %1) { Stop-Process -Id %1 -Force; Start-Sleep -Seconds 1 }").arg(pid);
     if (file.endsWith(".exe", Qt::CaseInsensitive)) {
-        // Installiert für alle Benutzer (Programme-Ordner) -> Setup fragt selbst nach Adminrechten
-        const QString scope = dirWritable(appDir) ? "/CURRENTUSER" : "/ALLUSERS";
-        s << QString("Start-Process -Wait -FilePath %1 -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART','%2'")
-                 .arg(pq(QDir::toNativeSeparators(file)), scope);
+        // Gleicher Modus und Ordner wie die bestehende Installation; "alle Benutzer" -> Setup fragt nach Adminrechten
+        const QString scope = installScope(o_.innoAppId, appDir);
+        s << QString("$p = Start-Process -Wait -PassThru -FilePath %1 -ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART',"
+                     "'/CLOSEAPPLICATIONS','/FORCECLOSEAPPLICATIONS','%2',%3")
+                 .arg(pq(QDir::toNativeSeparators(file)), scope, pq("/DIR=\"" + QDir::toNativeSeparators(appDir) + "\""))
+          << QString("\"setup %1 exit=$($p.ExitCode)\" | Out-File -LiteralPath %2 -Encoding utf8").arg(scope, log);
     } else {
         const QString out = QDir::toNativeSeparators(tmp + "/unpacked");
         s << QString("Remove-Item -LiteralPath %1 -Recurse -Force").arg(pq(out))
