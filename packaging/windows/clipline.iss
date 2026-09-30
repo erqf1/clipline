@@ -37,8 +37,8 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "..\..\dist\Clipline\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Clipline"; Filename: "{app}\Clipline.exe"
-Name: "{autodesktop}\Clipline"; Filename: "{app}\Clipline.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Clipline"; Filename: "{app}\Clipline.exe"; AppUserModelID: "WSoftware.Clipline"
+Name: "{autodesktop}\Clipline"; Filename: "{app}\Clipline.exe"; AppUserModelID: "WSoftware.Clipline"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Clipline.exe"; Description: "Start Clipline"; Flags: nowait postinstall skipifsilent

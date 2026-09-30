@@ -1,3 +1,8 @@
+#include <QtGlobal>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shobjidl.h>
+#endif
 #include <QApplication>
 #include <QDir>
 #include <QFile>
@@ -151,6 +156,10 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
 }
 
 int main(int argc, char* argv[]) {
+#ifdef Q_OS_WIN
+    // Eigene App-ID: eigener Taskleisten-Button, nicht mit anderen Programmen gruppiert
+    SetCurrentProcessExplicitAppUserModelID(L"WSoftware.Clipline");
+#endif
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("WSoftware");
     QCoreApplication::setApplicationName("Clipline");
