@@ -35,7 +35,9 @@ private:
     bool recording_ = false;
 };
 
-// Zeigt ein detailreiches Bild so, wie es bei der gewählten Aufnahmehöhe aussieht
+// Zeigt ein echtes Foto genau in der gewählten Aufnahmeauflösung: Das Foto wird auf diese Auflösung
+// heruntergerechnet und dann wie im Vollbild auf einem 1080p-Monitor angezeigt (Ausschnitt, geglättet).
+// Pfeile links/rechts wechseln das Foto.
 class QualityPreview : public QWidget {
 public:
     explicit QualityPreview(QWidget* parent = nullptr);
@@ -43,9 +45,18 @@ public:
 
 protected:
     void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void leaveEvent(QEvent*) override;
 
 private:
-    int height_ = 1080, native_ = 1080;
+    QRectF imageRect() const;
+    QRectF arrowRect(int dir) const;
+    void ensureImage();
+
+    int height_ = 1080, native_ = 1080, index_ = 0, hover_ = 0;
+    QImage cached_;
+    int cachedH_ = -1, cachedIdx_ = -1;
 };
 
 // Die vier Einstellungsseiten. Werden vom Ersteinrichtungs-Assistenten nacheinander
@@ -102,4 +113,3 @@ private:
 };
 
 void applyLook(const Config& c);
-const QImage& detailScene();  // 1920×1080, für Qualitätsvorschau (App + Website)

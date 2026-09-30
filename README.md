@@ -47,6 +47,10 @@ cmake --build build
 
 On Windows, `build.bat` builds and creates the portable zip. Release packages for all platforms are built by GitHub Actions when a `v*` tag is pushed.
 
+## Photo credits
+
+Quality preview photos (bundled in the app and on the website): *Female anhinga* – NPS Everglades, public domain · *Oolah Valley* – NPS Alaska, public domain · *Parc de la Chute-Montmorency* – Wikimedia Commons, CC0.
+
 ## License
 
 MIT for the Clipline source code. Release packages bundle [FFmpeg](https://ffmpeg.org) (GPL build) and [Qt](https://www.qt.io) (LGPLv3), which keep their own licenses.

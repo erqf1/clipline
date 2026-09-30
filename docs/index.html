@@ -80,7 +80,7 @@
   /* Live-Demo */
   .demo-screen { position:relative; border-radius:22px; padding:10px; background:linear-gradient(160deg,var(--line2),transparent 40%),var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow),0 0 140px -40px var(--a2); transform:perspective(1400px) rotateY(-9deg) rotateX(3deg); transition:transform .6s; }
   .demo-screen:hover { transform:perspective(1400px) rotateY(-3deg) rotateX(1deg); }
-  .demo-screen .scene { position:relative; border-radius:14px; overflow:hidden; aspect-ratio:16/9; background:#1b1440 url(img/detail.webp) center/cover; }
+  .demo-screen .scene { position:relative; border-radius:14px; overflow:hidden; aspect-ratio:16/9; background:#1b1440 url(img/photo-valley.webp) center/cover; }
   .demo-screen .scene::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,.55)); }
   .hud-rec { position:absolute; top:12px; left:12px; z-index:2; display:flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font:600 12px var(--mono); backdrop-filter:blur(6px); }
   .buffer { position:absolute; left:14px; right:14px; bottom:14px; z-index:2; height:8px; border-radius:6px; background:rgba(255,255,255,.18); overflow:hidden; }
@@ -95,7 +95,7 @@
                      66%,70% { transform:translateY(4px); box-shadow:0 1px 0 var(--line2),0 6px 16px -8px rgba(0,0,0,.5); border-color:var(--a1); } }
   .toast { position:absolute; right:-18px; top:22%; z-index:4; display:flex; align-items:center; gap:12px; padding:11px 16px 11px 11px; border-radius:16px;
     background:var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow); animation:toast 6s infinite; min-width:230px; }
-  .toast .thumb { width:64px; height:36px; border-radius:7px; background:url(img/detail.webp) center/cover; }
+  .toast .thumb { width:64px; height:36px; border-radius:7px; background:url(img/photo-valley.webp) center/cover; }
   .toast b { display:block; font-size:14px; } .toast small { color:var(--muted); font-size:12.5px; }
   .toast .ok { width:22px; height:22px; border-radius:50%; background:#22c55e; color:#fff; display:grid; place-items:center; font-size:13px; margin-left:auto; }
   @keyframes toast { 0%,70% { opacity:0; transform:translateX(24px) scale(.96); } 76%,94% { opacity:1; transform:none; } 100% { opacity:0; transform:translateX(24px) scale(.96); } }
@@ -179,13 +179,18 @@
   .pair { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
   .pair img { width:54px; height:54px; } .pair .arrow { color:var(--muted); font-size:22px; }
 
-  /* Qualitäts-Vergleich */
-  .compare { position:relative; max-width:980px; margin:0 auto; border-radius:22px; overflow:hidden; border:1px solid var(--line2); box-shadow:var(--shadow); aspect-ratio:16/9; user-select:none; touch-action:none; background:#1b1440; }
-  .compare canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
-  .compare .handle { position:absolute; top:0; bottom:0; width:3px; margin-left:-1.5px; background:#fff; box-shadow:0 0 18px rgba(0,0,0,.5); cursor:ew-resize; }
-  .compare .handle::after { content:"⟷"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:46px; height:46px; border-radius:50%; background:#fff; color:#15121d; display:grid; place-items:center; font-weight:800; box-shadow:0 8px 24px rgba(0,0,0,.4); }
-  .compare .tag { position:absolute; top:14px; padding:5px 12px; border-radius:999px; background:rgba(0,0,0,.6); color:#fff; font:700 13px var(--mono); backdrop-filter:blur(6px); }
-  .compare .tag.l { left:14px; } .compare .tag.r { right:14px; }
+  /* Qualitätsansicht: echtes Foto in echter Auflösung */
+  .qview { position:relative; max-width:1000px; margin:0 auto; border-radius:22px; overflow:hidden; border:1px solid var(--line2); box-shadow:var(--shadow),0 0 120px -40px var(--a2); aspect-ratio:16/9; background:#000; }
+  .qview canvas { position:absolute; inset:0; width:100%; height:100%; display:block; transition:opacity .2s; }
+  .qview .arrow { position:absolute; top:50%; transform:translateY(-50%); width:52px; height:52px; border-radius:50%; border:1px solid rgba(255,255,255,.25);
+    background:rgba(0,0,0,.45); backdrop-filter:blur(8px); color:#fff; display:grid; place-items:center; font-size:22px; transition:background .15s, transform .15s; }
+  .qview .arrow:hover { background:rgba(0,0,0,.7); transform:translateY(-50%) scale(1.06); }
+  .qview .arrow.l { left:16px; } .qview .arrow.r { right:16px; }
+  .qview .tag { position:absolute; top:16px; right:16px; padding:6px 13px; border-radius:999px; background:rgba(0,0,0,.6); color:#fff; font:700 13px var(--mono); backdrop-filter:blur(6px); }
+  .qview .dots { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:8px; }
+  .qview .dots button { width:9px; height:9px; padding:0; border-radius:50%; border:0; background:rgba(255,255,255,.45); }
+  .qview .dots button.on { background:#fff; width:22px; border-radius:5px; }
+  .qview .credit { position:absolute; bottom:12px; left:16px; color:rgba(255,255,255,.7); font-size:11.5px; text-shadow:0 1px 4px rgba(0,0,0,.6); }
   .resbar { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:0 0 26px; }
   .resbar button { padding:9px 16px; border-radius:999px; border:1px solid var(--line2); background:var(--card-solid); font:600 14px var(--mono); transition:.15s; }
   .resbar button:hover { border-color:var(--a1); }
@@ -411,15 +416,18 @@
     <div class="center">
       <p class="label reveal" data-i18n="q_l">Quality</p>
       <h2 class="reveal" data-i18n="qq_h">See the difference before you choose.</h2>
-      <p class="sub reveal" data-i18n="qq_s">Lower resolutions save memory, higher ones keep every detail. Drag the handle and switch the resolution.</p>
+      <p class="sub reveal" data-i18n="qq_s">A real photo, really scaled to the resolution you pick – shown like a clip in fullscreen on a 1080p screen. Switch photos with the arrows.</p>
     </div>
     <div class="resbar reveal" id="resbar">
       <button data-v="2160">4K</button><button data-v="1440">1440p</button><button data-v="1080">1080p</button><button data-v="720">720p</button><button data-v="480" class="on">480p</button><button data-v="360">360p</button>
     </div>
-    <div class="compare reveal" id="compare">
-      <canvas id="cmp"></canvas>
-      <span class="tag l">4K</span><span class="tag r" id="cmp-tag">480p</span>
-      <div class="handle" id="cmp-handle" style="left:50%"></div>
+    <div class="qview reveal" id="qview">
+      <canvas id="qcv"></canvas>
+      <span class="tag" id="qtag">480p</span>
+      <button class="arrow l" id="qprev" aria-label="Previous photo">‹</button>
+      <button class="arrow r" id="qnext" aria-label="Next photo">›</button>
+      <div class="dots" id="qdots"></div>
+      <span class="credit" id="qcredit"></span>
     </div>
     <p class="resinfo reveal" id="resinfo"></p>
   </div>
@@ -605,48 +613,59 @@
   });
   calc();
 
-  // ---------- Qualitäts-Vergleich (links Original, rechts gewählte Auflösung) ----------
-  var cmpRes = 480, split = 0.5, detail = new Image();
-  var cv = $('#cmp'), box = $('#compare'), ctx = cv.getContext('2d');
-  var low = document.createElement('canvas');
-  function drawCmp() {
-    if (!detail.complete || !detail.naturalWidth) return;
-    var dpr = window.devicePixelRatio || 1, W = box.clientWidth, H = box.clientHeight;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    // Ausschnitt in der Bildmitte (Stadt + HUD), so wirkt es wie ein Zoom in den Clip
-    var sx = 560, sy = 380, sw = 960, sh = 540;
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(detail, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
-    // rechte Seite: auf die Zielauflösung verkleinern und pixelig wieder vergrößern
-    var k = cmpRes / 1080;
-    low.width = Math.max(8, Math.round(sw * k)); low.height = Math.max(4, Math.round(sh * k));
-    var lc = low.getContext('2d'); lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = 'high';
-    lc.drawImage(detail, sx, sy, sw, sh, 0, 0, low.width, low.height);
-    var x = Math.round(cv.width * split);
-    ctx.save(); ctx.beginPath(); ctx.rect(x, 0, cv.width - x, cv.height); ctx.clip();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(low, 0, 0, low.width, low.height, 0, 0, cv.width, cv.height);
-    ctx.restore();
-    $('#cmp-handle').style.left = (split * 100) + '%';
-    $('#cmp-tag').textContent = cmpRes === 2160 ? '4K' : cmpRes + 'p';
-    var h = cmpRes, w = Math.round(h * 16 / 9 / 2) * 2, br = Math.min(80e6, Math.max(1.5e6, w * h * 60 * 0.07));
-    var mb = (br * 1.1 + 160e3) / 8 * 65 / 1048576 + 110 + w * h * 24 / 1048576;
-    $('#resinfo').innerHTML = (lang === 'de' ? 'Rechts: <b>' : 'Right: <b>') + $('#cmp-tag').textContent + '</b> · ' + w + '×' + h + ' · ' +
-      (lang === 'de' ? '1-Minuten-Clip bei 60 fps ≈ <b>' : '1-minute clip at 60 fps ≈ <b>') + Math.round(mb) + ' MB RAM</b>';
+  // ---------- Qualitätsansicht: Foto wirklich auf die Auflösung rechnen, dann wie im Vollbild anzeigen ----------
+  var PHOTOS = [
+    { src: 'img/photo-bird.webp', fx: .47, fy: .42, credit: 'Anhinga · NPS Everglades · Public domain' },
+    { src: 'img/photo-valley.webp', fx: .50, fy: .30, credit: 'Oolah Valley · NPS Alaska · Public domain' },
+    { src: 'img/photo-falls.webp', fx: .56, fy: .36, credit: 'Chute-Montmorency · Wikimedia Commons · CC0' }
+  ];
+  var qRes = 480, qIdx = 0, qImgs = {}, low = document.createElement('canvas'), cv = $('#qcv'), ctx = cv.getContext('2d');
+  function loadPhoto(i, cb) {
+    if (qImgs[i] && qImgs[i].complete) return cb(qImgs[i]);
+    var im = new Image(); im.onload = function () { cb(im); }; im.src = PHOTOS[i].src; qImgs[i] = im;
   }
-  detail.onload = drawCmp;
-  detail.src = 'img/detail.webp';
-  window.addEventListener('resize', drawCmp);
+  // Schrittweise halbieren: so rechnen auch Videoskalierer sauber herunter (kein Flimmern)
+  function downscale(img, w, h) {
+    var src = img, sw = img.naturalWidth, sh = img.naturalHeight;
+    while (sw / 2 >= w) {
+      var t = document.createElement('canvas'); t.width = Math.round(sw / 2); t.height = Math.round(sh / 2);
+      var tc = t.getContext('2d'); tc.imageSmoothingQuality = 'high'; tc.drawImage(src, 0, 0, t.width, t.height);
+      src = t; sw = t.width; sh = t.height;
+    }
+    low.width = w; low.height = h;
+    var lc = low.getContext('2d'); lc.imageSmoothingQuality = 'high'; lc.drawImage(src, 0, 0, w, h);
+    return low;
+  }
+  function drawQ() {
+    var ph = PHOTOS[qIdx];
+    loadPhoto(qIdx, function (img) {
+      var box = $('#qview'), dpr = window.devicePixelRatio || 1;
+      cv.width = Math.round(box.clientWidth * dpr); cv.height = Math.round(box.clientHeight * dpr);
+      var h = qRes, w = Math.round(h * 16 / 9 / 2) * 2;
+      var frame = downscale(img, w, h);
+      // Ausschnitt = halbe Bildbreite: bei 1080p entspricht das ungefähr Originalgröße auf dem Bildschirm
+      var cw = w / 2, ch = h / 2;
+      var cx = Math.min(w - cw, Math.max(0, w * ph.fx - cw / 2)), cy = Math.min(h - ch, Math.max(0, h * ph.fy - ch / 2));
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(frame, cx, cy, cw, ch, 0, 0, cv.width, cv.height);
+      $('#qtag').textContent = (h === 2160 ? '4K' : h + 'p') + ' · ' + w + '×' + h;
+      $('#qcredit').textContent = ph.credit;
+      $('#qdots').innerHTML = PHOTOS.map(function (_, i) { return '<button data-i="' + i + '" class="' + (i === qIdx ? 'on' : '') + '" aria-label="Photo ' + (i + 1) + '"></button>'; }).join('');
+      var br = Math.min(80e6, Math.max(1.5e6, w * h * 60 * 0.07));
+      var mb = (br * 1.1 + 160e3) / 8 * 65 / 1048576 + 110 + w * h * 24 / 1048576;
+      $('#resinfo').innerHTML = '<b>' + (h === 2160 ? '4K' : h + 'p') + '</b> · ' + w + '×' + h + ' · ' +
+        (lang === 'de' ? '1-Minuten-Clip bei 60 fps ≈ <b>' : '1-minute clip at 60 fps ≈ <b>') + Math.round(mb) + ' MB RAM</b>';
+    });
+  }
+  window.addEventListener('resize', drawQ);
   $('#resbar').addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
     $$('button', $('#resbar')).forEach(function (x) { x.classList.toggle('on', x === b); });
-    cmpRes = +b.dataset.v; drawCmp();
+    qRes = +b.dataset.v; drawQ();
   });
-  var dragging = false;
-  function setSplit(ev) { var r = box.getBoundingClientRect(); split = Math.min(.97, Math.max(.03, (ev.clientX - r.left) / r.width)); drawCmp(); }
-  box.addEventListener('pointerdown', function (e) { dragging = true; box.setPointerCapture(e.pointerId); setSplit(e); });
-  box.addEventListener('pointermove', function (e) { if (dragging) setSplit(e); });
-  box.addEventListener('pointerup', function () { dragging = false; });
+  $('#qprev').addEventListener('click', function () { qIdx = (qIdx + PHOTOS.length - 1) % PHOTOS.length; drawQ(); });
+  $('#qnext').addEventListener('click', function () { qIdx = (qIdx + 1) % PHOTOS.length; drawQ(); });
+  $('#qdots').addEventListener('click', function (e) { var b = e.target.closest('[data-i]'); if (b) { qIdx = +b.dataset.i; drawQ(); } });
 
   // ---------- Sprache ----------
   var T = { de: {
@@ -669,7 +688,7 @@
     b6_h:'Mit Ton', b6_p:'Systemton und Mikrofon, gemischt im Clip.',
     b7_h:'Startet mit dir', b7_p:'Autostart im Hintergrund – kein Fenster, nur ein kleines Tray-Symbol. Öffnest du es, landest du in deinem Clip-Ordner.',
     b8_h:'Gemacht für Cutline', b8_p:'Mit Cutline öffnet sich jeder Clip mit einem Klick im Editor – und Cutline zeigt deine Clips direkt in seiner Leiste.',
-    q_l:'Qualität', qq_h:'Sieh den Unterschied, bevor du wählst.', qq_s:'Niedrigere Auflösungen sparen Speicher, höhere behalten jedes Detail. Zieh den Regler und wechsle die Auflösung.',
+    q_l:'Qualität', qq_h:'Sieh den Unterschied, bevor du wählst.', qq_s:'Ein echtes Foto, wirklich auf die gewählte Auflösung gerechnet – so, wie ein Clip im Vollbild auf einem 1080p-Bildschirm aussieht. Mit den Pfeilen wechselst du das Foto.',
     s_l:'Erster Start', s_h:'Vier schnelle Entscheidungen.', s_s:'Ordner, Cliplänge & Qualität, deine Taste und das Aussehen. Alles lässt sich später in den Einstellungen ändern.',
     t1:'Ordner', t2:'Länge & Qualität', t3:'Hotkey & Ton', t4:'Aussehen', t5:'Clip-Galerie',
     d_l:'Download', d_h:'Hol dir Clipline.', d_s:'Für alle kostenlos. System wählen – jede Datei kommt direkt von GitHub Releases.',
@@ -688,7 +707,7 @@
     lang = l; document.documentElement.lang = l;
     $$('[data-i18n]').forEach(function (el) { var k = el.dataset.i18n, v = l === 'en' ? orig[k] : (T[l] && T[l][k]); if (v != null) el.innerHTML = v; });
     $$('img.loc').forEach(function (img) { img.src = img.dataset.src.replace('{lang}', l); });
-    render(); drawCmp();
+    render(); drawQ();
     try { localStorage.setItem('lang', l); } catch (e) {}
   }
   var sel = $('#lang'), saved = null;

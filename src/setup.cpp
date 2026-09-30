@@ -6,7 +6,9 @@
 #include <QFormLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QImageReader>
 #include <QKeyEvent>
+#include <QMouseEvent>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -42,97 +44,23 @@ static QWidget* page(QVBoxLayout** out) {
     return w;
 }
 
-// ---------------------------------------------------------------- Detailbild (Spielszene mit feinen Strukturen)
-const QImage& detailScene() {
-    static const QImage img = [] {
-        const int W = 1920, H = 1080;
-        QImage im(W, H, QImage::Format_RGB32);
-        QPainter p(&im);
-        p.setRenderHint(QPainter::Antialiasing);
-        QRandomGenerator rng(42);
-        // Himmel
-        QLinearGradient sky(0, 0, 0, H * 0.62);
-        sky.setColorAt(0, QColor("#1b1440"));
-        sky.setColorAt(0.55, QColor("#7a2d6b"));
-        sky.setColorAt(1, QColor("#ff8a5c"));
-        p.fillRect(0, 0, W, H, sky);
-        // Sterne
-        for (int i = 0; i < 420; ++i) {
-            p.setPen(QColor(255, 255, 255, 80 + rng.bounded(170)));
-            p.drawPoint(rng.bounded(W), rng.bounded(int(H * 0.4)));
-        }
-        // Sonne mit feinen Streifen
-        QRadialGradient sun(W * 0.68, H * 0.52, 190);
-        sun.setColorAt(0, QColor("#fff2b0"));
-        sun.setColorAt(1, QColor("#ff5f6d"));
-        p.setPen(Qt::NoPen);
-        p.setBrush(sun);
-        p.drawEllipse(QPointF(W * 0.68, H * 0.52), 190, 190);
-        for (int y = int(H * 0.52); y < H * 0.52 + 190; y += 14) {
-            p.fillRect(QRectF(W * 0.68 - 200, y, 400, 3 + (y - H * 0.52) / 40), QColor("#7a2d6b"));
-        }
-        // Berge
-        for (int layer = 0; layer < 3; ++layer) {
-            QPainterPath m;
-            const double base = H * (0.58 + layer * 0.03);
-            m.moveTo(0, H);
-            m.lineTo(0, base);
-            for (int x = 0; x <= W; x += 60) m.lineTo(x, base - rng.bounded(60 + layer * 30) - (layer == 0 ? 60 : 0));
-            m.lineTo(W, H);
-            p.fillPath(m, QColor::fromHsv(270 - layer * 12, 150, 60 + layer * 25));
-        }
-        // Stadt mit vielen kleinen Fenstern
-        for (int x = 0; x < W; x += 34 + rng.bounded(20)) {
-            const int bw = 28 + rng.bounded(40), bh = 120 + rng.bounded(260);
-            const int by = int(H * 0.78) - bh;
-            p.fillRect(x, by, bw, bh + 10, QColor("#150f2b"));
-            for (int wy = by + 8; wy < by + bh - 6; wy += 11)
-                for (int wx = x + 5; wx < x + bw - 5; wx += 8)
-                    if (rng.bounded(3)) p.fillRect(wx, wy, 4, 6, rng.bounded(5) ? QColor("#ffd479") : QColor("#58e0ff"));
-        }
-        // Boden mit Perspektivraster
-        const int horizon = int(H * 0.78);
-        p.fillRect(0, horizon, W, H - horizon, QColor("#120b24"));
-        p.setPen(QPen(QColor("#ff4d9d"), 2));
-        for (int i = -30; i <= 30; ++i) p.drawLine(QPointF(W / 2.0 + i * 12, horizon), QPointF(W / 2.0 + i * 160, H));
-        for (int k = 0; k < 14; ++k) {
-            const double y = horizon + std::pow(k / 14.0, 2.0) * (H - horizon);
-            p.drawLine(QPointF(0, y), QPointF(W, y));
-        }
-        // HUD: Schrift, Minikarte, feines Karomuster
-        QFont f("Segoe UI");
-        f.setPixelSize(34);
-        f.setBold(true);
-        p.setFont(f);
-        p.setPen(Qt::white);
-        p.drawText(600, 440, "HP 100   ·   AMMO 30 / 90");
-        f.setPixelSize(20);
-        f.setBold(false);
-        p.setFont(f);
-        p.setPen(QColor(255, 255, 255, 210));
-        p.drawText(600, 476, "Objective: reach the tower before sunset  ·  Squad: 4/4  ·  Ping 12 ms");
-        p.drawText(600, 504, "The quick brown fox jumps over the lazy dog 0123456789");
-        const QRect map(W - 330, 50, 280, 280);
-        p.fillRect(map, QColor(10, 8, 25, 200));
-        p.setPen(QPen(QColor(120, 200, 255, 160), 1));
-        for (int i = 0; i <= 280; i += 14) {
-            p.drawLine(map.left() + i, map.top(), map.left() + i, map.bottom());
-            p.drawLine(map.left(), map.top() + i, map.right(), map.top() + i);
-        }
-        p.setPen(QPen(QColor("#ff4d6d"), 3));
-        p.drawEllipse(map.center(), 8, 8);
-        for (int y = H - 150; y < H - 60; y += 2)
-            for (int x = 60; x < 360; x += 2)
-                if (((x + y) / 2) % 2) p.fillRect(x, y, 2, 2, QColor(255, 255, 255, 60));
-        return im;
-    }();
-    return img;
-}
+// ---------------------------------------------------------------- Qualitätsvorschau mit echten Fotos
+namespace {
+struct Photo {
+    const char* file;
+    double fx, fy;  // Bildmitte des Ausschnitts (0..1)
+};
+// Gemeinfrei/CC0 (Wikimedia Commons): Anhinga – NPS Everglades · Oolah Valley – NPS Alaska · Chute-Montmorency – CC0
+const Photo kPhotos[] = {{":/photos/bird.jpg", 0.47, 0.42}, {":/photos/valley.jpg", 0.50, 0.30}, {":/photos/falls.jpg", 0.56, 0.36}};
+constexpr int kPhotoCount = 3;
+constexpr double kZoom = 1920.0 / 640.0;  // Ausschnitt = 1/3 der Breite -> wie 1080p-Vollbild in Originalgröße
+}  // namespace
 
-// ---------------------------------------------------------------- Qualitätsvorschau
 QualityPreview::QualityPreview(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(120);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMouseTracking(true);
+    setCursor(Qt::ArrowCursor);
 }
 
 void QualityPreview::setCaptureHeight(int h, int nativeH) {
@@ -141,40 +69,110 @@ void QualityPreview::setCaptureHeight(int h, int nativeH) {
     update();
 }
 
-void QualityPreview::paintEvent(QPaintEvent*) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    // 16:9-Fläche einpassen
+QRectF QualityPreview::imageRect() const {
     QRectF r = rect().adjusted(1, 1, -1, -1);
     if (r.width() / r.height() > 16.0 / 9) r.setWidth(r.height() * 16 / 9);
     else r.setHeight(r.width() * 9 / 16);
     r.moveCenter(QRectF(rect()).center());
-    // Ausschnitt (mittleres Viertel), damit man die Pixel sieht
-    const QImage& full = detailScene();
-    const double k = double(std::min(height_, native_)) / 1080.0;
-    const QRect crop(560, 380, 960, 540);  // Stadt, Sonne, Raster: viele feine Details
-    const QImage part = full.copy(crop);
-    const QImage low = part.scaled(std::max(8, int(960 * k)), std::max(4, int(540 * k)), Qt::IgnoreAspectRatio,
-                                   Qt::SmoothTransformation);
+    return r;
+}
+
+QRectF QualityPreview::arrowRect(int dir) const {
+    const QRectF r = imageRect();
+    const double s = 36;
+    return QRectF(dir < 0 ? r.left() + 10 : r.right() - 10 - s, r.center().y() - s / 2, s, s);
+}
+
+// Foto direkt in der Aufnahmeauflösung dekodieren (JPEG-Skalierung beim Lesen: schnell und sparsam),
+// dann nur den gezeigten Ausschnitt behalten
+void QualityPreview::ensureImage() {
+    const int h = std::min(height_, native_);
+    if (cachedH_ == h && cachedIdx_ == index_ && !cached_.isNull()) return;
+    const Photo& ph = kPhotos[index_];
+    const QSize full(int(std::lround(h * 16.0 / 9 / 2)) * 2, h);
+    const QSize part(std::max(4, int(full.width() / kZoom)), std::max(4, int(full.height() / kZoom)));
+    QRect clip(int(full.width() * ph.fx - part.width() / 2.0), int(full.height() * ph.fy - part.height() / 2.0),
+               part.width(), part.height());
+    clip.moveLeft(std::clamp(clip.left(), 0, full.width() - part.width()));
+    clip.moveTop(std::clamp(clip.top(), 0, full.height() - part.height()));
+    QImageReader reader(ph.file);
+    reader.setScaledSize(full);
+    reader.setScaledClipRect(clip);
+    cached_ = reader.read();
+    cachedH_ = h;
+    cachedIdx_ = index_;
+}
+
+void QualityPreview::paintEvent(QPaintEvent*) {
+    ensureImage();
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRectF r = imageRect();
     QPainterPath clip;
     clip.addRoundedRect(r, 12, 12);
     p.setClipPath(clip);
-    p.setRenderHint(QPainter::SmoothPixmapTransform, false);
-    p.drawImage(r, low);
+    p.fillRect(r, Qt::black);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);  // wie ein Videoplayer: geglättet, nicht verpixelt
+    if (!cached_.isNull()) p.drawImage(r, cached_);
     p.setClipping(false);
-    // Plakette
+
+    // Pfeile
+    for (int dir : {-1, 1}) {
+        const QRectF a = arrowRect(dir);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0, 0, 0, hover_ == dir ? 190 : 120));
+        p.drawEllipse(a);
+        QPen pen(Qt::white, 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+        p.setPen(pen);
+        const QPointF c = a.center();
+        const double d = 5 * dir;
+        p.drawPolyline(QPolygonF({c + QPointF(-d, -8), c + QPointF(d, 0), c + QPointF(-d, 8)}));
+    }
+    // Punkte
+    for (int i = 0; i < kPhotoCount; ++i) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(i == index_ ? QColor(255, 255, 255) : QColor(255, 255, 255, 110));
+        p.drawEllipse(QPointF(r.center().x() + (i - 1) * 14, r.bottom() - 14), 3.5, 3.5);
+    }
+    // Plakette mit echter Auflösung
     QFont f = font();
     f.setPixelSize(12);
     f.setBold(true);
     p.setFont(f);
-    const QString t = QString("%1p").arg(std::min(height_, native_));
-    const double bw = QFontMetrics(f).horizontalAdvance(t) + 18;
-    const QRectF b(r.right() - bw - 10, r.bottom() - 32, bw, 22);
-    p.setPen(Qt::NoPen);
+    const int h = std::min(height_, native_);
+    const QString t = QString("%1p · %2×%3").arg(h).arg(int(std::lround(h * 16.0 / 9 / 2)) * 2).arg(h);
+    const double bw = QFontMetrics(f).horizontalAdvance(t) + 20;
+    const QRectF b(r.right() - bw - 10, r.top() + 10, bw, 22);
     p.setBrush(QColor(0, 0, 0, 170));
     p.drawRoundedRect(b, 11, 11);
     p.setPen(Qt::white);
     p.drawText(b, Qt::AlignCenter, t);
+}
+
+void QualityPreview::mousePressEvent(QMouseEvent* e) {
+    for (int dir : {-1, 1}) {
+        if (arrowRect(dir).contains(e->position())) {
+            index_ = (index_ + dir + kPhotoCount) % kPhotoCount;
+            update();
+            return;
+        }
+    }
+}
+
+void QualityPreview::mouseMoveEvent(QMouseEvent* e) {
+    int h = 0;
+    for (int dir : {-1, 1})
+        if (arrowRect(dir).contains(e->position())) h = dir;
+    if (h != hover_) {
+        hover_ = h;
+        setCursor(h ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        update();
+    }
+}
+
+void QualityPreview::leaveEvent(QEvent*) {
+    hover_ = 0;
+    update();
 }
 
 // ---------------------------------------------------------------- Hotkey-Aufnahme
@@ -374,7 +372,7 @@ QWidget* ConfigPages::recordingPage() {
     cols->addLayout(form, 1);
     v->addLayout(cols);
     preview_ = new QualityPreview;
-    preview_->setMinimumHeight(170);
+    preview_->setMinimumHeight(190);
     v->addWidget(preview_, 1);
 
     // RAM

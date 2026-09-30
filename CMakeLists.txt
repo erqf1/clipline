@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Clipline VERSION 1.0.0 LANGUAGES CXX)
+project(Clipline VERSION 1.0.1 LANGUAGES CXX)
 if(WIN32)
     enable_language(RC)
 endif()
@@ -7,6 +7,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 
@@ -20,6 +21,7 @@ set(CLIPLINE_SOURCES
     src/setup.h src/setup.cpp
     src/gallery.h src/gallery.cpp
     src/controller.h src/controller.cpp
+    assets/photos.qrc
 )
 
 if(WIN32)

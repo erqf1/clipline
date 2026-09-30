@@ -58,6 +58,7 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.autostart = false;
     cfg.firstRunDone = true;
     cfg.language = qEnvironmentVariable("CLIPLINE_LANG", "en");
+    cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;
     setLanguage(cfg.language);
     applyLook(cfg);
     say("ffmpeg: " + ffmpegPath());
@@ -75,7 +76,6 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
             shot(&wiz, QString("wizard%1").arg(i + 1));
         }
         Q_UNUSED(stack);
-        detailScene().save(dir + "/detail.png");
     }
     {
         SettingsDialog dlg(cfg);
