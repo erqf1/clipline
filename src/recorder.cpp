@@ -190,9 +190,12 @@ QStringList Recorder::buildArgs(bool withAudio) {
     else
         a << "-c:v" << "libx264" << "-preset" << "ultrafast" << "-tune" << "zerolatency" << "-b:v" << b << "-maxrate"
           << maxr << "-bufsize" << buf;
-    // Keyframe jede Sekunde und SPS/PPS vor jedem Keyframe -> jeder Ausschnitt aus dem Puffer ist abspielbar
+    // Keyframe jede Sekunde und SPS/PPS vor jedem Paket -> jeder Ausschnitt aus dem Puffer ist abspielbar.
+    // Nicht nur "freq=keyframe": AMF markiert die erzwungenen Keyframes nicht immer als solche, dann fehlten
+    // SPS/PPS im Puffer, sobald der Anfang der Aufnahme herausgefallen ist ("non-existing PPS", leerer Clip).
+    // Kostet nur ein paar KB pro Sekunde.
     a << "-g" << gop << "-force_key_frames" << "expr:gte(t,n_forced*1)" << "-flags" << "+global_header" << "-bsf:v"
-      << "dump_extra=freq=keyframe";
+      << "dump_extra=freq=all";
     if (!amap.isEmpty()) a << "-c:a" << "aac" << "-b:a" << "160k" << "-ar" << "48000" << "-ac" << "2";
     a << "-f" << "mpegts" << "-muxdelay" << "0" << "pipe:1";
     return a;
@@ -328,6 +331,7 @@ void Recorder::saveClip() {
             p2->deleteLater();
             tmp->deleteLater();
             const bool ok2 = s2 == QProcess::NormalExit && c2 == 0 && QFileInfo(out).size() > 1024;
+            if (!ok2) QFile::remove(out);  // keine leere/kaputte Datei im Clip-Ordner liegen lassen
             emit clipSaved(ok2 ? out : QString(), ok2, ok2 ? QString() : err);
         });
         p2->start(ffmpegPath(), {"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-i", tsPath, "-map", "0", "-c", "copy",

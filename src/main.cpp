@@ -99,6 +99,8 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.firstRunDone = true;
     cfg.language = qEnvironmentVariable("CLIPLINE_LANG", "en");
     cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;
+    cfg.mic = qEnvironmentVariable("CLIPLINE_TESTMIC");
+    if (qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP") > 0) cfg.clipSeconds = qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP");
     setLanguage(cfg.language);
     applyLook(cfg);
     say("ffmpeg: " + ffmpegPath());
@@ -127,6 +129,9 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     bool done = secs <= 0, ok = secs <= 0;
     QString clip;
     QObject::connect(&ctl, &Controller::clipDone, [&](const QString& p, bool o) { done = true; ok = o; clip = p; });
+    QObject::connect(&ctl.recorder(), &Recorder::clipSaved, [&](const QString&, bool o, const QString& err) {
+        if (!o) say("save error: " + err);
+    });
     QTimer::singleShot(secs * 1000, &ctl, &Controller::saveClip);
     QTimer::singleShot(secs * 1000 + 20000, &app, [&] { done = true; });
     QElapsedTimer t;
