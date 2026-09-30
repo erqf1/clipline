@@ -6,7 +6,7 @@ Save the last moments of your screen with one key. Clipline records quietly in t
 - **Clips from memory.** The last 10 s to 10 min are kept in RAM, nothing touches your disk until you save. The setup shows you the estimated RAM use before you start.
 - **One key.** `Ctrl+Alt+S` (configurable) saves the clip as an MP4 in your folder, with system sound and optionally your microphone.
 - **Clip gallery.** Open Clipline to see all clips with previews. With [Cutline](https://github.com/erqf1/cutline) installed you can open any clip straight in the editor – and Cutline shows your Clipline clips too.
-- **Your way.** Clips folder anywhere, clip length slider, resolution, frame rate, quality, accent colour, dark or light – all set on first start and changeable later.
+- **Your way.** Clips folder anywhere, clip length slider with live RAM estimate, resolution from native down to 360p with a pixel preview, frame rate, quality, your own hotkey, accent colour, dark or light – all set on first start and changeable later.
 
 ## Download
 

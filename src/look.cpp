@@ -46,6 +46,10 @@ QPushButton#primary { background: @accent@; color: @acctext@; border-color: @acc
 QPushButton#primary:hover { background: @accent2@; }
 QPushButton#flat { background: transparent; border: none; color: @muted@; padding: 6px 8px; }
 QPushButton#flat:hover { color: @text@; }
+QPushButton#hotkey { font-size: 20px; font-weight: 700; letter-spacing: 1px; padding: 12px; border-radius: 14px;
+    border: 2px solid @border@; border-bottom-width: 5px; background: @panel2@; }
+QPushButton#hotkey:hover { border-color: @accent@; }
+QPushButton#hotkey[recording="true"] { border-color: @accent@; color: @accent@; background: @panel@; }
 QPushButton#swatch { border-radius: 15px; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; padding: 0; border: 2px solid transparent; }
 QPushButton#swatch:checked { border: 3px solid @text@; }
 QPushButton#seg { border-radius: 0; padding: 7px 16px; }

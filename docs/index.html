@@ -17,66 +17,101 @@
 </script>
 <style>
   :root {
-    --a1:#ff5f6d; --a2:#8b5cf6; --grad:linear-gradient(135deg,var(--a1),var(--a2));
-    --radius:18px; --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+    --a1:#ff5f6d; --a2:#8b5cf6; --a3:#ff9a5c; --grad:linear-gradient(135deg,var(--a1),var(--a2));
+    --radius:20px; --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
     --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
   }
   [data-theme="dark"] {
-    --bg:#08070c; --bg2:#0d0b13; --card:#13111b; --card2:#1a1724; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
-    --text:#f1eff7; --muted:#958fa8; --label:#ff7a8a; --shadow:0 30px 80px -20px rgba(0,0,0,.75);
-    --glow1:rgba(255,95,109,.24); --glow2:rgba(139,92,246,.24); --grid:rgba(255,255,255,.085);
+    --bg:#07060b; --bg2:#0d0b14; --card:rgba(22,19,32,.72); --card-solid:#15121e; --card2:#1d1929; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.15);
+    --text:#f3f1f8; --muted:#9a93ad; --label:#ff7e8c; --shadow:0 40px 100px -30px rgba(0,0,0,.85);
+    --orb1:rgba(255,95,109,.40); --orb2:rgba(139,92,246,.42); --orb3:rgba(255,154,92,.22); --grid:rgba(255,255,255,.085);
   }
   [data-theme="light"] {
-    --bg:#f8f6fb; --bg2:#ffffff; --card:#ffffff; --card2:#f2eff8; --line:rgba(30,20,50,.09); --line2:rgba(30,20,50,.16);
-    --text:#15121d; --muted:#625b74; --label:#e03a55; --shadow:0 30px 70px -25px rgba(90,50,120,.35);
-    --glow1:rgba(255,95,109,.18); --glow2:rgba(139,92,246,.16); --grid:rgba(30,20,60,.10);
+    --bg:#faf8fd; --bg2:#ffffff; --card:rgba(255,255,255,.78); --card-solid:#ffffff; --card2:#f3f0f9; --line:rgba(40,20,70,.09); --line2:rgba(40,20,70,.17);
+    --text:#15121d; --muted:#615a73; --label:#e03a55; --shadow:0 40px 90px -35px rgba(90,50,130,.40);
+    --orb1:rgba(255,95,109,.28); --orb2:rgba(139,92,246,.26); --orb3:rgba(255,154,92,.20); --grid:rgba(30,20,60,.10);
   }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; scroll-padding-top:80px; }
-  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 var(--sans); -webkit-font-smoothing:antialiased; transition:background .3s,color .3s; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 var(--sans); -webkit-font-smoothing:antialiased; overflow-x:hidden; transition:background .3s,color .3s; }
   a { color:inherit; text-decoration:none; }
   img { max-width:100%; display:block; }
   button { font:inherit; color:inherit; cursor:pointer; }
-  .wrap { max-width:1140px; margin:0 auto; padding:0 24px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 24px; }
   svg.i { width:1em; height:1em; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
-  .label { font:600 13px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--label); margin:0 0 16px; }
-  .grad-text { background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .label { display:inline-flex; align-items:center; gap:8px; font:600 12.5px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; color:var(--label); margin:0 0 18px; }
+  .label::before { content:""; width:18px; height:2px; background:var(--grad); border-radius:2px; }
+  .grad-text { background:linear-gradient(100deg,var(--a1),var(--a3) 45%,var(--a2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
 
-  nav { position:sticky; top:0; z-index:50; backdrop-filter:blur(16px) saturate(1.4); background:color-mix(in srgb,var(--bg) 78%,transparent); border-bottom:1px solid var(--line); }
-  nav .wrap { display:flex; align-items:center; gap:22px; height:66px; }
-  .brand { display:flex; align-items:center; gap:11px; font-weight:750; font-size:19px; }
-  .brand img { width:32px; height:32px; }
-  .links { margin-left:auto; display:flex; align-items:center; gap:6px; }
-  .links a.l { padding:8px 13px; border-radius:10px; color:var(--muted); font-size:15px; font-weight:500; transition:.15s; }
-  .links a.l:hover { color:var(--text); background:var(--card2); }
-  .ib, .sel { height:38px; border-radius:11px; border:1px solid var(--line); background:var(--card); color:var(--text); display:inline-grid; place-items:center; transition:.15s; }
-  .ib { width:38px; font-size:18px; } .ib:hover, .sel:hover { border-color:var(--line2); background:var(--card2); }
-  .sel { padding:0 30px 0 12px; font-size:14px; appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23958fa8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; }
-  .theme-ic .sun { display:none; } [data-theme="light"] .theme-ic .sun { display:block; } [data-theme="light"] .theme-ic .moon { display:none; }
-
-  .hero { position:relative; padding:92px 0 70px; text-align:center; overflow:hidden; isolation:isolate; }
-  .hero::before { content:""; position:absolute; inset:0; z-index:-2;
-    background:radial-gradient(700px 420px at 18% 0%,var(--glow1),transparent 70%),radial-gradient(700px 420px at 84% 8%,var(--glow2),transparent 70%); }
-  .hero::after { content:""; position:absolute; inset:0; z-index:-1;
+  /* Hintergrund: bewegte Farbwolken + Raster */
+  .aurora { position:fixed; inset:0; z-index:-2; pointer-events:none; overflow:hidden; }
+  .aurora i { position:absolute; width:62vw; height:62vw; border-radius:50%; filter:blur(90px); opacity:.9; animation:drift 26s ease-in-out infinite alternate; }
+  .aurora i:nth-child(1) { background:var(--orb1); left:-18vw; top:-26vw; }
+  .aurora i:nth-child(2) { background:var(--orb2); right:-20vw; top:-12vw; animation-duration:32s; animation-delay:-8s; }
+  .aurora i:nth-child(3) { background:var(--orb3); left:25vw; top:40vh; width:40vw; height:40vw; animation-duration:38s; }
+  @keyframes drift { 0% { transform:translate(0,0) scale(1); } 50% { transform:translate(6vw,4vh) scale(1.08); } 100% { transform:translate(-4vw,8vh) scale(.95); } }
+  .gridbg { position:absolute; inset:0; z-index:-1; pointer-events:none;
     background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:56px 56px;
     -webkit-mask:radial-gradient(85% 75% at 50% 30%,#000 35%,transparent 85%); mask:radial-gradient(85% 75% at 50% 30%,#000 35%,transparent 85%); }
-  .hero-logo { width:92px; height:92px; margin:0 auto 22px; filter:drop-shadow(0 16px 36px rgba(255,95,109,.35)); }
-  .badge { display:inline-flex; align-items:center; gap:9px; padding:6px 14px 6px 8px; border-radius:999px; border:1px solid var(--line2); background:var(--card); font-size:14px; color:var(--muted); }
-  .badge b { background:var(--grad); color:#fff; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:650; }
-  .rec { display:inline-block; width:8px; height:8px; border-radius:50%; background:#ff2d55; box-shadow:0 0 0 0 rgba(255,45,85,.6); animation:pulse 1.8s infinite; margin-right:2px; }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,45,85,.55)} 70%{box-shadow:0 0 0 9px rgba(255,45,85,0)} 100%{box-shadow:0 0 0 0 rgba(255,45,85,0)} }
-  h1 { font-size:clamp(42px,7.2vw,82px); line-height:1.02; letter-spacing:-.04em; margin:24px auto 22px; max-width:900px; font-weight:800; }
-  .lead { max-width:650px; margin:0 auto 38px; color:var(--muted); font-size:clamp(17px,2vw,20px); }
 
-  .dlui { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; position:relative; }
+  /* Navigation */
+  nav { position:sticky; top:0; z-index:50; backdrop-filter:blur(18px) saturate(1.5); -webkit-backdrop-filter:blur(18px) saturate(1.5); background:color-mix(in srgb,var(--bg) 70%,transparent); border-bottom:1px solid var(--line); }
+  nav .wrap { display:flex; align-items:center; gap:22px; height:68px; }
+  .brand { display:flex; align-items:center; gap:11px; font-weight:780; font-size:19px; letter-spacing:-.01em; }
+  .brand img { width:34px; height:34px; }
+  .links { margin-left:auto; display:flex; align-items:center; gap:4px; }
+  .links a.l { padding:8px 13px; border-radius:10px; color:var(--muted); font-size:15px; font-weight:500; transition:.15s; }
+  .links a.l:hover { color:var(--text); background:var(--card2); }
+  .ib, .sel { height:38px; border-radius:11px; border:1px solid var(--line2); background:var(--card-solid); color:var(--text); display:inline-grid; place-items:center; transition:.15s; }
+  .ib { width:38px; font-size:18px; } .ib:hover, .sel:hover { border-color:var(--a1); }
+  .sel { padding:0 30px 0 12px; font-size:14px; appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a93ad' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; }
+  .theme-ic .sun { display:none; } [data-theme="light"] .theme-ic .sun { display:block; } [data-theme="light"] .theme-ic .moon { display:none; }
+
+  /* Hero */
+  .hero { position:relative; padding:78px 0 40px; isolation:isolate; }
+  .hero .cols { display:grid; grid-template-columns:1.02fr 1fr; gap:54px; align-items:center; }
+  .badge { display:inline-flex; align-items:center; gap:9px; padding:6px 14px 6px 7px; border-radius:999px; border:1px solid var(--line2); background:var(--card); backdrop-filter:blur(8px); font-size:14px; color:var(--muted); }
+  .badge b { background:var(--grad); color:#fff; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:650; }
+  .rec { display:inline-block; width:8px; height:8px; border-radius:50%; background:#ff2d55; animation:pulse 1.8s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,45,85,.6)} 70%{box-shadow:0 0 0 10px rgba(255,45,85,0)} 100%{box-shadow:0 0 0 0 rgba(255,45,85,0)} }
+  h1 { font-size:clamp(44px,6.4vw,84px); line-height:.98; letter-spacing:-.045em; margin:24px 0 22px; font-weight:850; }
+  .lead { max-width:560px; margin:0 0 34px; color:var(--muted); font-size:clamp(17px,1.7vw,20px); }
+
+  /* Live-Demo */
+  .demo-screen { position:relative; border-radius:22px; padding:10px; background:linear-gradient(160deg,var(--line2),transparent 40%),var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow),0 0 140px -40px var(--a2); transform:perspective(1400px) rotateY(-9deg) rotateX(3deg); transition:transform .6s; }
+  .demo-screen:hover { transform:perspective(1400px) rotateY(-3deg) rotateX(1deg); }
+  .demo-screen .scene { position:relative; border-radius:14px; overflow:hidden; aspect-ratio:16/9; background:#1b1440 url(img/detail.webp) center/cover; }
+  .demo-screen .scene::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,.55)); }
+  .hud-rec { position:absolute; top:12px; left:12px; z-index:2; display:flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff; font:600 12px var(--mono); backdrop-filter:blur(6px); }
+  .buffer { position:absolute; left:14px; right:14px; bottom:14px; z-index:2; height:8px; border-radius:6px; background:rgba(255,255,255,.18); overflow:hidden; }
+  .buffer i { position:absolute; inset:0; background:linear-gradient(90deg,rgba(255,95,109,.2),var(--a1) 55%,var(--a2)); transform-origin:left; animation:fill 6s linear infinite; }
+  @keyframes fill { 0% { transform:scaleX(.55); } 100% { transform:scaleX(1); } }
+  .keys { position:absolute; left:50%; bottom:-24px; transform:translateX(-50%); z-index:3; display:flex; gap:8px; align-items:center; }
+  .cap { display:inline-grid; place-items:center; min-width:52px; height:48px; padding:0 13px; border-radius:12px; font:700 15px var(--mono); color:var(--text);
+    background:linear-gradient(180deg,var(--card2),var(--card-solid)); border:1px solid var(--line2); box-shadow:0 5px 0 var(--line2),0 14px 30px -10px rgba(0,0,0,.5); animation:press 6s infinite; }
+  .cap:nth-child(3) { animation-delay:.08s; } .cap:nth-child(5) { animation-delay:.16s; }
+  .keys .plus { color:var(--muted); font-weight:700; }
+  @keyframes press { 0%,62%,74%,100% { transform:translateY(0); box-shadow:0 5px 0 var(--line2),0 14px 30px -10px rgba(0,0,0,.5); border-color:var(--line2); }
+                     66%,70% { transform:translateY(4px); box-shadow:0 1px 0 var(--line2),0 6px 16px -8px rgba(0,0,0,.5); border-color:var(--a1); } }
+  .toast { position:absolute; right:-18px; top:22%; z-index:4; display:flex; align-items:center; gap:12px; padding:11px 16px 11px 11px; border-radius:16px;
+    background:var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow); animation:toast 6s infinite; min-width:230px; }
+  .toast .thumb { width:64px; height:36px; border-radius:7px; background:url(img/detail.webp) center/cover; }
+  .toast b { display:block; font-size:14px; } .toast small { color:var(--muted); font-size:12.5px; }
+  .toast .ok { width:22px; height:22px; border-radius:50%; background:#22c55e; color:#fff; display:grid; place-items:center; font-size:13px; margin-left:auto; }
+  @keyframes toast { 0%,70% { opacity:0; transform:translateX(24px) scale(.96); } 76%,94% { opacity:1; transform:none; } 100% { opacity:0; transform:translateX(24px) scale(.96); } }
+
+  /* Download-Knöpfe */
+  .dlui { display:flex; gap:12px; flex-wrap:wrap; position:relative; }
   .dd { position:relative; }
-  .btn { display:inline-flex; align-items:center; gap:11px; height:54px; padding:0 22px; border-radius:15px; font-weight:650; font-size:17px; border:1px solid var(--line2); background:var(--card); transition:transform .15s,box-shadow .2s,border-color .15s; }
-  .btn:hover { transform:translateY(-2px); }
-  .btn.pri { background:var(--grad); border-color:transparent; color:#fff; box-shadow:0 12px 34px -8px var(--a1); }
-  .btn.pri:hover { box-shadow:0 18px 44px -8px var(--a1); }
+  .btn { display:inline-flex; align-items:center; gap:11px; height:56px; padding:0 24px; border-radius:16px; font-weight:680; font-size:17px; border:1px solid var(--line2); background:var(--card-solid); transition:transform .15s,box-shadow .2s,border-color .15s; }
+  .btn:hover { transform:translateY(-2px); border-color:var(--a1); }
+  .btn.pri { position:relative; background:var(--grad); border-color:transparent; color:#fff; box-shadow:0 14px 38px -10px var(--a1); overflow:hidden; }
+  .btn.pri::after { content:""; position:absolute; top:0; left:-60%; width:40%; height:100%; background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent); transform:skewX(-20deg); animation:shine 4.5s infinite; }
+  @keyframes shine { 0%,70% { left:-60%; } 100% { left:130%; } }
+  .btn.pri:hover { box-shadow:0 20px 48px -10px var(--a1); }
   .btn .i { font-size:19px; } .btn .chev { font-size:15px; opacity:.85; transition:transform .2s; }
   .btn[aria-expanded="true"] .chev { transform:rotate(180deg); }
-  .menu { position:absolute; top:calc(100% + 10px); left:0; z-index:40; min-width:300px; text-align:left; background:var(--card); border:1px solid var(--line2); border-radius:16px; box-shadow:var(--shadow); padding:8px; opacity:0; transform:translateY(-6px) scale(.98); pointer-events:none; transition:.16s; }
+  .menu { position:absolute; top:calc(100% + 10px); left:0; z-index:40; min-width:300px; text-align:left; background:var(--card-solid); border:1px solid var(--line2); border-radius:18px; box-shadow:var(--shadow); padding:8px; opacity:0; transform:translateY(-6px) scale(.98); pointer-events:none; transition:.16s; }
   .menu.open { opacity:1; transform:none; pointer-events:auto; }
   .menu.wide { width:min(440px,92vw); }
   .tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; padding:4px; margin-bottom:6px; background:var(--bg2); border-radius:12px; border:1px solid var(--line); }
@@ -89,82 +124,104 @@
   .item .t b { display:block; font-size:16px; font-weight:650; line-height:1.3; }
   .item .t small { display:block; color:var(--muted); font-size:13.5px; line-height:1.4; }
   .item .sz { font:13px var(--mono); color:var(--muted); white-space:nowrap; }
-  .vline { margin-top:22px; color:var(--muted); font-size:15px; }
+  .vline { margin-top:20px; color:var(--muted); font-size:15px; }
   .vline a { color:var(--label); text-decoration:underline; text-underline-offset:3px; }
-  .chips { display:flex; gap:9px; justify-content:center; flex-wrap:wrap; margin-top:20px; }
-  .chip { font:13px var(--mono); padding:6px 14px; border-radius:999px; border:1px solid var(--line2); background:transparent; color:var(--text); transition:.15s; }
-  .chip:hover { border-color:var(--a1); background:var(--card); }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+  .chip { font:13px var(--mono); padding:6px 13px; border-radius:999px; border:1px solid var(--line2); background:var(--card); color:var(--text); transition:.15s; }
+  .chip:hover { border-color:var(--a1); }
 
-  .frame { position:relative; margin:64px auto 0; max-width:1060px; border-radius:20px; background:var(--card); border:1px solid var(--line2); box-shadow:var(--shadow),0 0 120px -30px var(--a2); overflow:hidden; }
+  /* Zahlenleiste */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; margin:84px 0 0; border-radius:var(--radius); overflow:hidden; border:1px solid var(--line2); background:var(--line2); }
+  .stat { padding:26px 24px; background:var(--card-solid); }
+  .stat b { display:block; font-size:clamp(28px,3.4vw,40px); font-weight:820; letter-spacing:-.03em; line-height:1.1; }
+  .stat span { color:var(--muted); font-size:14.5px; }
+
+  /* Abschnitte */
+  section { padding:110px 0; position:relative; }
+  h2 { font-size:clamp(34px,4.9vw,58px); letter-spacing:-.035em; line-height:1.04; margin:0 0 16px; font-weight:840; max-width:800px; }
+  .sub { color:var(--muted); font-size:19px; max-width:640px; margin:0 0 54px; }
+  .center { text-align:center; } .center h2, .center .sub { margin-left:auto; margin-right:auto; }
+
+  /* Karten mit Farbverlaufsrand */
+  .gcard { position:relative; border-radius:var(--radius); background:var(--card); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); padding:30px; overflow:hidden; transition:transform .25s; }
+  .gcard::before { content:""; position:absolute; inset:0; border-radius:inherit; padding:1px; pointer-events:none;
+    background:linear-gradient(150deg,var(--line2),transparent 40%,transparent 60%,var(--line2));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; }
+  .gcard:hover { transform:translateY(-3px); }
+  .gcard:hover::before { background:linear-gradient(150deg,var(--a1),transparent 45%,transparent 55%,var(--a2)); }
+  .gcard h3 { margin:0 0 6px; font-size:21px; letter-spacing:-.01em; }
+  .gcard p { margin:0; color:var(--muted); font-size:15.5px; }
+  .ic { width:46px; height:46px; border-radius:13px; display:grid; place-items:center; margin-bottom:18px; font-size:22px; color:#fff; background:var(--grad); box-shadow:0 10px 26px -10px var(--a1); }
+
+  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; position:relative; }
+  .steps .n { font:800 14px var(--mono); color:var(--label); letter-spacing:.1em; }
+  .steps h3 { margin:10px 0 8px; font-size:23px; }
+
+  .bento { display:grid; grid-template-columns:repeat(6,1fr); gap:16px; }
+  .c2 { grid-column:span 2; } .c3 { grid-column:span 3; } .c4 { grid-column:span 4; } .c6 { grid-column:span 6; }
+  .demo { margin-top:22px; }
+  .kbd { display:inline-grid; place-items:center; min-width:42px; height:42px; padding:0 12px; border-radius:11px; border:1px solid var(--line2); border-bottom-width:4px; background:var(--bg2); font:700 15px var(--mono); }
+  .kbds { display:flex; gap:8px; align-items:center; } .kbds .plus { color:var(--muted); }
+  .calc { display:grid; gap:14px; }
+  .calc .row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .calc .big { font:850 38px/1 var(--sans); letter-spacing:-.03em; }
+  .calc input[type=range] { width:100%; accent-color:var(--a1); height:24px; }
+  .seg { display:flex; gap:6px; flex-wrap:wrap; }
+  .seg button { border:1px solid var(--line2); background:var(--bg2); padding:6px 12px; border-radius:9px; font-size:14px; font-weight:550; transition:.15s; }
+  .seg button:hover { border-color:var(--a1); }
+  .seg button.on { background:var(--grad); color:#fff; border-color:transparent; }
+  .meter { height:10px; border-radius:6px; background:var(--card2); overflow:hidden; }
+  .meter i { display:block; height:100%; background:var(--grad); border-radius:6px; transition:width .35s; }
+  .muted { color:var(--muted); font-size:14px; }
+  .wave { display:flex; gap:3px; align-items:center; height:48px; }
+  .wave i { flex:1; border-radius:3px; background:var(--grad); animation:wave 1.3s ease-in-out infinite; }
+  @keyframes wave { 0%,100% { transform:scaleY(.25); } 50% { transform:scaleY(1); } }
+  .pair { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+  .pair img { width:54px; height:54px; } .pair .arrow { color:var(--muted); font-size:22px; }
+
+  /* Qualitäts-Vergleich */
+  .compare { position:relative; max-width:980px; margin:0 auto; border-radius:22px; overflow:hidden; border:1px solid var(--line2); box-shadow:var(--shadow); aspect-ratio:16/9; user-select:none; touch-action:none; background:#1b1440; }
+  .compare canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .compare .handle { position:absolute; top:0; bottom:0; width:3px; margin-left:-1.5px; background:#fff; box-shadow:0 0 18px rgba(0,0,0,.5); cursor:ew-resize; }
+  .compare .handle::after { content:"⟷"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:46px; height:46px; border-radius:50%; background:#fff; color:#15121d; display:grid; place-items:center; font-weight:800; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .compare .tag { position:absolute; top:14px; padding:5px 12px; border-radius:999px; background:rgba(0,0,0,.6); color:#fff; font:700 13px var(--mono); backdrop-filter:blur(6px); }
+  .compare .tag.l { left:14px; } .compare .tag.r { right:14px; }
+  .resbar { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:0 0 26px; }
+  .resbar button { padding:9px 16px; border-radius:999px; border:1px solid var(--line2); background:var(--card-solid); font:600 14px var(--mono); transition:.15s; }
+  .resbar button:hover { border-color:var(--a1); }
+  .resbar button.on { background:var(--grad); color:#fff; border-color:transparent; }
+  .resinfo { text-align:center; color:var(--muted); margin-top:18px; font-size:15px; }
+  .resinfo b { color:var(--text); }
+
+  /* Einrichtung */
+  .setup-tabs { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:30px; }
+  .setup-tabs button { padding:10px 18px; border-radius:999px; border:1px solid var(--line2); background:var(--card-solid); font-size:14.5px; font-weight:600; transition:.15s; }
+  .setup-tabs button.on { background:var(--grad); color:#fff; border-color:transparent; }
+  .frame { position:relative; margin:0 auto; max-width:900px; border-radius:20px; background:var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow),0 0 120px -40px var(--a2); overflow:hidden; }
   .frame .bar { display:flex; gap:7px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--bg2); }
   .frame .bar i { width:11px; height:11px; border-radius:50%; }
   .frame .bar i:nth-child(1) { background:#ff5f57 } .frame .bar i:nth-child(2) { background:#febc2e } .frame .bar i:nth-child(3) { background:#28c840 }
   .frame img { width:100%; height:auto; transition:opacity .25s; }
+  .gallery-frame { max-width:1080px; }
 
-  section { padding:100px 0; }
-  h2 { font-size:clamp(32px,4.8vw,54px); letter-spacing:-.03em; line-height:1.08; margin:0 0 16px; font-weight:800; max-width:780px; }
-  .sub { color:var(--muted); font-size:19px; max-width:620px; margin:0 0 52px; }
-  .center { text-align:center; } .center h2, .center .sub { margin-left:auto; margin-right:auto; }
-
-  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
-  .step { padding:32px; border-radius:var(--radius); background:var(--card); border:1px solid var(--line); }
-  .step .n { font:700 56px/1 var(--mono); background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .step h3 { margin:18px 0 8px; font-size:22px; }
-  .step p { margin:0; color:var(--muted); }
-
-  .bento { display:grid; grid-template-columns:repeat(6,1fr); gap:16px; }
-  .cell { position:relative; padding:28px; border-radius:var(--radius); background:var(--card); border:1px solid var(--line); overflow:hidden; transition:border-color .2s,transform .2s; }
-  .cell:hover { border-color:var(--line2); transform:translateY(-2px); }
-  .cell h3 { margin:0 0 6px; font-size:20px; }
-  .cell p { margin:0; color:var(--muted); font-size:15.5px; }
-  .c2 { grid-column:span 2; } .c3 { grid-column:span 3; } .c4 { grid-column:span 4; } .c6 { grid-column:span 6; }
-  .demo { margin-top:22px; }
-  .kbd { display:inline-grid; place-items:center; min-width:40px; height:40px; padding:0 12px; border-radius:10px; border:1px solid var(--line2); border-bottom-width:3px; background:var(--bg2); font:600 15px var(--mono); }
-  .kbds { display:flex; gap:8px; align-items:center; }
-  .kbds span.plus { color:var(--muted); }
-  /* RAM-Rechner */
-  .calc { display:grid; gap:14px; }
-  .calc .row { display:flex; justify-content:space-between; align-items:baseline; }
-  .calc .big { font:800 34px/1 var(--sans); background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .calc input[type=range] { width:100%; accent-color:var(--a1); }
-  .calc .seg { display:flex; gap:6px; flex-wrap:wrap; }
-  .calc .seg button { border:1px solid var(--line2); background:var(--bg2); padding:6px 12px; border-radius:9px; font-size:14px; }
-  .calc .seg button.on { background:var(--grad); color:#fff; border-color:transparent; }
-  .meter { height:10px; border-radius:6px; background:var(--card2); overflow:hidden; }
-  .meter i { display:block; height:100%; background:var(--grad); border-radius:6px; transition:width .3s; }
-  .muted { color:var(--muted); font-size:14px; }
-  /* Timeline-Deko */
-  .buffer { position:relative; height:54px; border-radius:12px; background:var(--bg2); border:1px solid var(--line); overflow:hidden; }
-  .buffer .fill { position:absolute; inset:0 0 0 auto; width:62%; background:linear-gradient(90deg,transparent,rgba(255,95,109,.35) 30%,rgba(139,92,246,.45)); }
-  .buffer .now { position:absolute; right:10px; top:50%; transform:translateY(-50%); font:600 12px var(--mono); color:#fff; background:#ff2d55; padding:3px 8px; border-radius:6px; }
-  .buffer .ticks { position:absolute; inset:0; background-image:linear-gradient(90deg,var(--line) 1px,transparent 1px); background-size:24px 100%; }
-  .pair { display:flex; align-items:center; gap:14px; }
-  .pair img { width:52px; height:52px; }
-  .pair .arrow { color:var(--muted); font-size:22px; }
-
-  .setup-tabs { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:30px; }
-  .setup-tabs button { padding:9px 16px; border-radius:999px; border:1px solid var(--line2); background:var(--card); font-size:14.5px; font-weight:550; }
-  .setup-tabs button.on { background:var(--grad); color:#fff; border-color:transparent; }
-  .setup-frame { max-width:820px; }
-
-  #download { background:linear-gradient(180deg,transparent,var(--bg2) 30%,var(--bg2) 70%,transparent); }
-  .dlpanel { max-width:640px; margin:0 auto; padding:12px; border-radius:22px; background:var(--card); border:1px solid var(--line2); box-shadow:var(--shadow); }
+  /* Download */
+  .dlpanel { max-width:660px; margin:0 auto; padding:12px; border-radius:24px; background:var(--card-solid); border:1px solid var(--line2); box-shadow:var(--shadow); }
   .dlpanel .item { padding:16px 18px; }
-  .dlpanel .item .dlic { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:var(--card2); border:1px solid var(--line); font-size:20px; }
+  .dlpanel .item .dlic { width:44px; height:44px; border-radius:13px; display:grid; place-items:center; background:var(--card2); border:1px solid var(--line); font-size:20px; }
   .cmd { display:flex; align-items:center; gap:10px; margin:0 18px 12px; padding:9px 12px; border-radius:10px; background:var(--bg2); border:1px solid var(--line); font:13px var(--mono); }
   .cmd code { flex:1; overflow-x:auto; white-space:nowrap; }
   .cmd button { border:0; background:transparent; color:var(--muted); padding:2px 6px; border-radius:6px; }
   .cmd button:hover { color:var(--text); background:var(--card2); }
-  .note { text-align:center; color:var(--muted); font-size:15px; margin:26px auto 0; max-width:640px; }
+  .note { text-align:center; color:var(--muted); font-size:15px; margin:26px auto 0; max-width:660px; }
 
-  .sister { display:flex; align-items:center; gap:22px; padding:28px; border-radius:22px; border:1px solid var(--line2);
-    background:linear-gradient(135deg,color-mix(in srgb,#22d3a0 12%,var(--card)),color-mix(in srgb,#2563eb 12%,var(--card))); }
-  .sister img { width:64px; height:64px; }
-  .sister h3 { margin:0 0 4px; font-size:22px; }
+  .sister { display:flex; align-items:center; gap:22px; padding:30px; border-radius:24px; border:1px solid var(--line2);
+    background:linear-gradient(135deg,color-mix(in srgb,#22d3a0 16%,var(--card-solid)),color-mix(in srgb,#2563eb 16%,var(--card-solid))); }
+  .sister img { width:66px; height:66px; }
+  .sister h3 { margin:0 0 4px; font-size:23px; }
   .sister p { margin:0; color:var(--muted); }
-  .sister .btn { margin-left:auto; height:46px; font-size:15px; }
+  .sister .btn { margin-left:auto; height:48px; font-size:15px; background:linear-gradient(135deg,#22d3a0,#2563eb); color:#fff; border:0; }
 
-  details { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px 24px; margin-bottom:12px; }
+  details { background:var(--card); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:16px; padding:20px 24px; margin-bottom:12px; transition:border-color .2s; }
   details[open] { border-color:var(--line2); }
   summary { cursor:pointer; font-weight:650; font-size:17px; list-style:none; display:flex; justify-content:space-between; gap:12px; }
   summary::-webkit-details-marker { display:none; }
@@ -172,23 +229,35 @@
   details[open] summary::after { transform:rotate(45deg); }
   details p { color:var(--muted); margin:12px 0 0; }
 
-  footer { border-top:1px solid var(--line); padding:38px 0 64px; color:var(--muted); font-size:15px; }
+  .cta { text-align:center; padding:70px 30px; border-radius:30px; position:relative; overflow:hidden; border:1px solid var(--line2);
+    background:radial-gradient(600px 300px at 20% 0%,var(--orb1),transparent 70%),radial-gradient(600px 300px at 80% 100%,var(--orb2),transparent 70%),var(--card-solid); }
+  .cta h2 { margin:0 auto 14px; }
+  .cta .dlui { justify-content:center; }
+
+  footer { border-top:1px solid var(--line); padding:40px 0 64px; color:var(--muted); font-size:15px; }
   footer .wrap { display:flex; gap:20px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
   footer a:hover { color:var(--text); }
 
-  .reveal { opacity:0; transform:translateY(18px); transition:opacity .7s ease,transform .7s ease; }
+  .reveal { opacity:0; transform:translateY(22px); transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1); }
   .reveal.in { opacity:1; transform:none; }
-  @media (prefers-reduced-motion:reduce) { .reveal { opacity:1; transform:none; transition:none; } .rec { animation:none; } html { scroll-behavior:auto; } }
-  @media (max-width:900px) {
+  @media (prefers-reduced-motion:reduce) {
+    .reveal { opacity:1; transform:none; transition:none; } .aurora i, .rec, .cap, .toast, .buffer i, .wave i, .btn.pri::after { animation:none; }
+    .toast { opacity:1; transform:none; } html { scroll-behavior:auto; }
+  }
+  @media (max-width:960px) {
+    .hero .cols { grid-template-columns:1fr; gap:70px; }
+    .demo-screen { transform:none; } .toast { right:8px; }
+    .stats { grid-template-columns:repeat(2,1fr); }
     .steps { grid-template-columns:1fr; }
     .bento { grid-template-columns:repeat(2,1fr); } .c2,.c3,.c4,.c6 { grid-column:span 2; }
     .links a.l { display:none; }
     .sister { flex-direction:column; text-align:center; } .sister .btn { margin:0; }
   }
-  @media (max-width:520px) { .wrap { padding:0 18px; } .btn { width:100%; justify-content:center; } .dd { width:100%; } .menu { left:0; right:0; min-width:0; width:100% !important; } section { padding:72px 0; } }
+  @media (max-width:520px) { .wrap { padding:0 18px; } .btn { width:100%; justify-content:center; } .dd { width:100%; } .menu { left:0; right:0; min-width:0; width:100% !important; } section { padding:80px 0; } .cap { min-width:44px; height:42px; } }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <nav>
   <div class="wrap">
@@ -196,9 +265,9 @@
     <div class="links">
       <a class="l" href="#how" data-i18n="nav_how">How it works</a>
       <a class="l" href="#features" data-i18n="nav_features">Features</a>
-      <a class="l" href="#setup" data-i18n="nav_setup">Setup</a>
+      <a class="l" href="#quality" data-i18n="nav_quality">Quality</a>
       <a class="l" href="#download" data-i18n="nav_download">Download</a>
-      <a class="l" id="gh-link" href="https://github.com/erqf1/clipline">GitHub</a>
+      <a class="l" href="https://github.com/erqf1/clipline">GitHub</a>
       <select class="sel" id="lang" aria-label="Language">
         <option value="en">English</option>
         <option value="de">Deutsch</option>
@@ -212,45 +281,60 @@
 </nav>
 
 <header class="hero" id="top">
+  <div class="gridbg"></div>
   <div class="wrap">
-    <img class="hero-logo" src="logo.png" alt="Clipline logo">
-    <span class="badge"><b data-i18n="badge_new">Free</b><span class="rec"></span><span data-i18n="badge_t">Always ready to clip</span></span>
-    <h1><span data-i18n="h1a">That moment?</span><br><span class="grad-text" data-i18n="h1b">It's already saved.</span></h1>
-    <p class="lead" data-i18n="lead">Clipline records quietly in the background and keeps the last minutes in memory. Press one key and the moment you just saw becomes a clip – no recording to start, no giant files, barely any CPU.</p>
-
-    <div class="dlui">
-      <div class="dd">
-        <a class="btn pri" id="main-btn" href="#download" aria-haspopup="true" aria-expanded="false">
-          <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
-          <span id="main-label">Download</span>
-          <svg class="i chev" viewBox="0 0 24 24" id="main-chev"><path d="M6 9l6 6 6-6"/></svg>
-        </a>
-        <div class="menu" id="main-menu" role="menu"></div>
-      </div>
-      <div class="dd">
-        <button class="btn" id="other-btn" aria-haspopup="true" aria-expanded="false">
-          <span data-i18n="other">Other systems</span>
-          <svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="menu wide" id="other-menu" role="menu">
-          <div class="tabs" id="other-tabs"></div>
-          <div id="other-list"></div>
+    <div class="cols">
+      <div>
+        <span class="badge reveal"><b data-i18n="badge_new">Free</b><span class="rec"></span><span data-i18n="badge_t">Always ready to clip</span></span>
+        <h1 class="reveal"><span data-i18n="h1a">That moment?</span><br><span class="grad-text" data-i18n="h1b">It's already saved.</span></h1>
+        <p class="lead reveal" data-i18n="lead">Clipline records quietly in the background and keeps the last minutes in memory. Press one key and the moment you just saw becomes a clip – no recording to start, no giant files, barely any CPU.</p>
+        <div class="dlui reveal">
+          <div class="dd">
+            <a class="btn pri" id="main-btn" href="#download" aria-haspopup="true" aria-expanded="false">
+              <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+              <span id="main-label">Download</span>
+              <svg class="i chev" viewBox="0 0 24 24" id="main-chev"><path d="M6 9l6 6 6-6"/></svg>
+            </a>
+            <div class="menu" id="main-menu" role="menu"></div>
+          </div>
+          <div class="dd">
+            <button class="btn" id="other-btn" aria-haspopup="true" aria-expanded="false">
+              <span data-i18n="other">Other systems</span>
+              <svg class="i chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="menu wide" id="other-menu" role="menu">
+              <div class="tabs" id="other-tabs"></div>
+              <div id="other-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="vline reveal"><span data-i18n="version">Version</span> <b id="ver">1.0.0</b> · <a href="https://github.com/erqf1/clipline/releases"><span data-i18n="all_dl">all downloads on GitHub</span></a></div>
+        <div class="chips reveal">
+          <button class="chip" data-tab="windows">Windows</button>
+          <button class="chip" data-tab="macos">macOS</button>
+          <button class="chip" data-tab="linux">.deb</button>
+          <button class="chip" data-tab="linux">pacman</button>
+          <button class="chip" data-tab="linux">tar.gz</button>
         </div>
       </div>
-    </div>
-    <div class="vline"><span data-i18n="version">Version</span> <b id="ver">1.0.0</b> · <a id="all-dl" href="https://github.com/erqf1/clipline/releases"><span data-i18n="all_dl">all downloads on GitHub</span></a></div>
-    <div class="chips">
-      <button class="chip" data-tab="windows">Windows</button>
-      <button class="chip" data-tab="macos">macOS</button>
-      <button class="chip" data-tab="linux">Linux</button>
-      <button class="chip" data-tab="linux">.deb</button>
-      <button class="chip" data-tab="linux">pacman</button>
-      <button class="chip" data-tab="linux">tar.gz</button>
+
+      <div class="reveal" style="position:relative">
+        <div class="demo-screen">
+          <div class="scene">
+            <span class="hud-rec"><span class="rec"></span>REC · <span data-i18n="last">last</span> 1:00</span>
+            <div class="buffer"><i></i></div>
+          </div>
+          <div class="keys"><span class="cap">Ctrl</span><span class="plus">+</span><span class="cap">Alt</span><span class="plus">+</span><span class="cap">S</span></div>
+        </div>
+        <div class="toast"><span class="thumb"></span><span><b data-i18n="toast_t">Clip saved</b><small>Clip 21-04-37.mp4 · 1:00</small></span><span class="ok">✓</span></div>
+      </div>
     </div>
 
-    <div class="frame reveal">
-      <div class="bar"><i></i><i></i><i></i></div>
-      <img class="loc" data-src="img/gallery-{lang}.webp" src="img/gallery-en.webp" alt="Clipline clip gallery with previews and the recording status">
+    <div class="stats reveal">
+      <div class="stat"><b class="grad-text">~5 %</b><span data-i18n="s1">of one CPU core at 1080p60</span></div>
+      <div class="stat"><b class="grad-text">0 MB</b><span data-i18n="s2">written to disk until you clip</span></div>
+      <div class="stat"><b class="grad-text">10 s – 10 min</b><span data-i18n="s3">rolling replay buffer</span></div>
+      <div class="stat"><b class="grad-text">3 OS</b><span data-i18n="s4">Windows, Linux and macOS</span></div>
     </div>
   </div>
 </header>
@@ -261,9 +345,9 @@
     <h2 class="reveal" data-i18n="how_h">Set it up once. Forget it's there.</h2>
     <p class="sub reveal" data-i18n="how_s">Clipline starts with your computer and waits in the tray. You only notice it when you need it.</p>
     <div class="steps">
-      <div class="step reveal"><div class="n">01</div><h3 data-i18n="st1_h">Choose</h3><p data-i18n="st1_p">On first start, pick your clips folder, how long a clip should be and how good it should look. Clipline shows how much RAM that needs.</p></div>
-      <div class="step reveal"><div class="n">02</div><h3 data-i18n="st2_h">Play</h3><p data-i18n="st2_p">Game, stream, work – Clipline keeps the last minutes in memory, using your graphics card so nothing slows down.</p></div>
-      <div class="step reveal"><div class="n">03</div><h3 data-i18n="st3_h">Clip</h3><p data-i18n="st3_p">Something great happened? Press the hotkey. The last moments land as an MP4 in your folder, with sound.</p></div>
+      <div class="gcard reveal"><div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg></div><span class="n">01</span><h3 data-i18n="st1_h">Choose</h3><p data-i18n="st1_p">Pick your clips folder, clip length, quality and your key. Clipline shows the RAM it needs before you start.</p></div>
+      <div class="gcard reveal"><div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><span class="n">02</span><h3 data-i18n="st2_h">Play</h3><p data-i18n="st2_p">Game, stream, work – Clipline keeps the last minutes in memory, using your graphics card so nothing slows down.</p></div>
+      <div class="gcard reveal"><div class="ic"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><span class="n">03</span><h3 data-i18n="st3_h">Clip</h3><p data-i18n="st3_p">Something great happened? Press your key. The last moments land as an MP4 in your folder, with sound.</p></div>
     </div>
   </div>
 </section>
@@ -274,67 +358,86 @@
     <h2 class="reveal" data-i18n="f_h">Small program. Big moments.</h2>
     <p class="sub reveal" data-i18n="f_s">Everything a replay buffer should do – and nothing that gets in the way.</p>
     <div class="bento">
-      <div class="cell c4 reveal">
+      <div class="gcard c4 reveal">
         <h3 data-i18n="b1_h">Know your RAM before you start</h3>
         <p data-i18n="b1_p">Clips live in memory until you save them. Move the slider and see exactly what it costs – try it:</p>
-        <div class="demo calc" id="calc">
+        <div class="demo calc">
           <div class="row"><span class="muted" data-i18n="c_len">Clip length</span><b id="c-len">1 min</b></div>
           <input type="range" id="c-slider" min="0" max="12" value="5" aria-label="Clip length">
-          <div class="row" style="gap:12px;flex-wrap:wrap">
-            <div class="seg" id="c-res"><button data-v="720">720p</button><button data-v="1080" class="on">1080p</button><button data-v="1440">1440p</button><button data-v="2160">4K</button></div>
-            <div class="seg" id="c-fps"><button data-v="30">30 fps</button><button data-v="60" class="on">60 fps</button><button data-v="120">120 fps</button></div>
+          <div class="row" style="flex-wrap:wrap">
+            <div class="seg" id="c-res"><button data-v="360">360p</button><button data-v="480">480p</button><button data-v="720">720p</button><button data-v="1080" class="on">1080p</button><button data-v="1440">1440p</button><button data-v="2160">4K</button></div>
+            <div class="seg" id="c-fps"><button data-v="30">30</button><button data-v="60" class="on">60</button><button data-v="120">120 fps</button></div>
           </div>
-          <div class="row"><span class="muted" data-i18n="c_ram">Estimated RAM</span><span class="big" id="c-ram">≈ 230 MB</span></div>
+          <div class="row"><span class="muted" data-i18n="c_ram">Estimated RAM</span><span class="big grad-text" id="c-ram">≈ 230 MB</span></div>
           <div class="meter"><i id="c-meter" style="width:20%"></i></div>
         </div>
       </div>
-      <div class="cell c2 reveal">
-        <h3 data-i18n="b2_h">One key</h3>
-        <p data-i18n="b2_p">Works in games and fullscreen. Change it to anything you like.</p>
+      <div class="gcard c2 reveal">
+        <h3 data-i18n="b2_h">Your key</h3>
+        <p data-i18n="b2_p">Record any combination on first start or in the settings. Works in games and fullscreen.</p>
         <div class="demo kbds"><span class="kbd">Ctrl</span><span class="plus">+</span><span class="kbd">Alt</span><span class="plus">+</span><span class="kbd">S</span></div>
       </div>
-      <div class="cell c3 reveal">
-        <h3 data-i18n="b3_h">Always the last moments</h3>
-        <p data-i18n="b3_p">A rolling buffer from 10 seconds to 10 minutes. Old footage simply falls away – your disk stays clean.</p>
-        <div class="demo buffer"><div class="ticks"></div><div class="fill"></div><span class="now" data-i18n="now">NOW</span></div>
-      </div>
-      <div class="cell c3 reveal">
+      <div class="gcard c2 reveal">
+        <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></div>
         <h3 data-i18n="b4_h">Barely there</h3>
-        <p data-i18n="b4_p">Recording runs on your GPU (NVIDIA, AMD, Intel, Apple). Around 5 % of one CPU core at 1080p60 – you won't feel it in games.</p>
+        <p data-i18n="b4_p">Recording runs on your GPU (NVIDIA, AMD, Intel, Apple). You won't feel it in games.</p>
       </div>
-      <div class="cell c2 reveal">
-        <h3 data-i18n="b5_h">Clip gallery</h3>
-        <p data-i18n="b5_p">Open Clipline to see every clip with preview, length and size. Play, rename, show in folder.</p>
-      </div>
-      <div class="cell c2 reveal">
+      <div class="gcard c2 reveal">
         <h3 data-i18n="b6_h">Sound included</h3>
         <p data-i18n="b6_p">System sound and your microphone, mixed into the clip.</p>
+        <div class="demo wave" id="wave"></div>
       </div>
-      <div class="cell c2 reveal">
+      <div class="gcard c2 reveal">
+        <div class="ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <h3 data-i18n="b5_h">Clip gallery</h3>
+        <p data-i18n="b5_p">Every clip with preview, length and size. Play, rename, show in folder.</p>
+      </div>
+      <div class="gcard c3 reveal">
+        <div class="ic"><svg class="i" viewBox="0 0 24 24"><path d="M12 2v10M5.6 6.6a8 8 0 1012.8 0"/></svg></div>
         <h3 data-i18n="b7_h">Starts with you</h3>
-        <p data-i18n="b7_p">Autostart in the background – no window, just a small tray icon.</p>
+        <p data-i18n="b7_p">Autostart in the background – no window, just a small tray icon. Open it and you land in your clip folder.</p>
       </div>
-      <div class="cell c6 reveal" style="background:linear-gradient(135deg,color-mix(in srgb,#22d3a0 10%,var(--card)),var(--card) 55%)">
-        <div class="pair" style="margin-bottom:14px"><img src="logo.png" alt=""><span class="arrow">⇄</span><img src="cutline.png" alt=""></div>
+      <div class="gcard c3 reveal" style="background:linear-gradient(135deg,color-mix(in srgb,#22d3a0 12%,var(--card-solid)),var(--card-solid) 60%)">
+        <div class="pair"><img src="logo.png" alt=""><span class="arrow">⇄</span><img src="cutline.png" alt=""></div>
         <h3 data-i18n="b8_h">Made to work with Cutline</h3>
-        <p data-i18n="b8_p">Install Cutline, our simple video editor, and every clip opens in it with one click – trim it, blur a name, add music. Cutline shows your Clipline clips too, right in its toolbar.</p>
+        <p data-i18n="b8_p">With Cutline installed, every clip opens in it with one click – and Cutline shows your clips right in its toolbar.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section id="setup">
+<section id="quality">
+  <div class="wrap">
+    <div class="center">
+      <p class="label reveal" data-i18n="q_l">Quality</p>
+      <h2 class="reveal" data-i18n="qq_h">See the difference before you choose.</h2>
+      <p class="sub reveal" data-i18n="qq_s">Lower resolutions save memory, higher ones keep every detail. Drag the handle and switch the resolution.</p>
+    </div>
+    <div class="resbar reveal" id="resbar">
+      <button data-v="2160">4K</button><button data-v="1440">1440p</button><button data-v="1080">1080p</button><button data-v="720">720p</button><button data-v="480" class="on">480p</button><button data-v="360">360p</button>
+    </div>
+    <div class="compare reveal" id="compare">
+      <canvas id="cmp"></canvas>
+      <span class="tag l">4K</span><span class="tag r" id="cmp-tag">480p</span>
+      <div class="handle" id="cmp-handle" style="left:50%"></div>
+    </div>
+    <p class="resinfo reveal" id="resinfo"></p>
+  </div>
+</section>
+
+<section id="setup" style="padding-top:30px">
   <div class="wrap center">
     <p class="label reveal" data-i18n="s_l">First start</p>
     <h2 class="reveal" data-i18n="s_h">Four quick choices.</h2>
-    <p class="sub reveal" data-i18n="s_s">Folder, clip length, quality and look. Everything can be changed later in the settings.</p>
+    <p class="sub reveal" data-i18n="s_s">Folder, clip length & quality, your key and the look. Everything can be changed later in the settings.</p>
     <div class="setup-tabs reveal" id="setup-tabs">
       <button data-img="wizard1" class="on" data-i18n="t1">Folder</button>
-      <button data-img="wizard2" data-i18n="t2">Clip length</button>
-      <button data-img="wizard3" data-i18n="t3">Quality</button>
+      <button data-img="wizard2" data-i18n="t2">Length & quality</button>
+      <button data-img="wizard3" data-i18n="t3">Hotkey & sound</button>
       <button data-img="wizard4" data-i18n="t4">Look</button>
+      <button data-img="gallery" data-i18n="t5">Clip gallery</button>
     </div>
-    <div class="frame setup-frame reveal"><div class="bar"><i></i><i></i><i></i></div>
+    <div class="frame reveal"><div class="bar"><i></i><i></i><i></i></div>
       <img id="setup-img" class="loc" data-src="img/wizard1-{lang}.webp" src="img/wizard1-en.webp" alt="Clipline setup" loading="lazy"></div>
   </div>
 </section>
@@ -359,7 +462,7 @@
     <div class="sister reveal">
       <img src="cutline.png" alt="Cutline logo">
       <div><h3 data-i18n="sis_h">Want to edit your clips?</h3><p data-i18n="sis_p">Cutline is our simple, fast video editor – and a great video player too.</p></div>
-      <a class="btn pri" href="https://erqf1.github.io/cutline/" style="background:linear-gradient(135deg,#22d3a0,#2563eb);box-shadow:none"><span data-i18n="sis_b">Get Cutline</span></a>
+      <a class="btn" href="https://erqf1.github.io/cutline/"><span data-i18n="sis_b">Get Cutline</span></a>
     </div>
   </div>
 </section>
@@ -367,10 +470,20 @@
 <section id="faq" style="padding-top:40px">
   <div class="wrap" style="max-width:820px">
     <div class="center"><p class="label reveal">FAQ</p><h2 class="reveal" data-i18n="q_h">Questions</h2></div>
-    <details class="reveal"><summary data-i18n="q1">Does it record all the time?</summary><p data-i18n="q1a">Yes, but only into memory. Nothing is written to your disk until you press the hotkey, and old footage is thrown away continuously.</p></details>
+    <details class="reveal"><summary data-i18n="q1">Does it record all the time?</summary><p data-i18n="q1a">Yes, but only into memory. Nothing is written to your disk until you press your key, and old footage is thrown away continuously.</p></details>
     <details class="reveal"><summary data-i18n="q2">Will it slow down my games?</summary><p data-i18n="q2a">Clipline encodes on your graphics card, so the CPU cost is tiny. If no hardware encoder is available it falls back to a very fast software encoder.</p></details>
     <details class="reveal"><summary data-i18n="q3">How much RAM does it need?</summary><p data-i18n="q3a">It depends on clip length and quality – the setup shows the estimate live. A 1-minute clip at 1080p60 needs roughly 230 MB in total.</p></details>
     <details class="reveal"><summary data-i18n="q4">Is it really free?</summary><p data-i18n="q4a">Yes. Clipline is open source under the MIT license.</p></details>
+  </div>
+</section>
+
+<section style="padding-top:20px">
+  <div class="wrap">
+    <div class="cta reveal">
+      <h2 data-i18n="cta_h">Never miss the moment again.</h2>
+      <p class="sub" style="margin:0 auto 30px" data-i18n="cta_s">Set it up in a minute. It will be ready when it matters.</p>
+      <div class="dlui"><a class="btn pri" href="#download"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span data-i18n="cta_b">Download Clipline</span></a></div>
+    </div>
   </div>
 </section>
 
@@ -388,6 +501,7 @@
   var OWNER = 'erqf1', REPO = 'clipline';
   var latest = 'https://github.com/' + OWNER + '/' + REPO + '/releases/latest/download/';
 
+  // ---------- Downloads ----------
   var ICON = {
     windows: '<svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M3 5.5l8-1.1v7.1H3zM12 4.3l9-1.3v8.5h-9zM3 12.5h8v7.1l-8-1.1zM12 12.5h9V21l-9-1.3z"/></svg>',
     macos: '<svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M16.4 12.6c0-2.4 2-3.5 2.1-3.6-1.2-1.7-3-1.9-3.6-1.9-1.5-.2-3 .9-3.8.9s-2-.9-3.3-.9C6 7.2 4.4 8.2 3.5 9.7c-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.5 1.3-.1 1.8-.8 3.3-.8s2 .8 3.3.8 2.2-1.2 3.1-2.4c1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.5zM14 5.3c.7-.8 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>',
@@ -458,7 +572,7 @@
     try { localStorage.setItem('theme', t); } catch (e) {}
   });
 
-  // Einrichtungs-Galerie
+  // ---------- Einrichtungs-Bilder ----------
   $('#setup-tabs').addEventListener('click', function (e) {
     var b = e.target.closest('[data-img]'); if (!b) return;
     $$('button', $('#setup-tabs')).forEach(function (x) { x.classList.toggle('on', x === b); });
@@ -466,7 +580,10 @@
     setTimeout(function () { img.src = img.dataset.src.replace('{lang}', lang); img.style.opacity = 1; }, 150);
   });
 
-  // RAM-Rechner (gleiche Formel wie in der App: config.cpp)
+  // ---------- Deko: Tonwelle ----------
+  $('#wave').innerHTML = Array.apply(null, Array(28)).map(function (_, i) { return '<i style="height:' + (30 + (i * 37) % 70) + '%;animation-delay:' + (-(i * 0.09)).toFixed(2) + 's"></i>'; }).join('');
+
+  // ---------- RAM-Rechner (gleiche Formel wie in der App, config.cpp) ----------
   var LENS = [10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 420, 600], res = 1080, fps = 60;
   function fmtDur(s) { return s < 60 ? s + ' s' : (s % 60 ? Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2) + ' min' : s / 60 + ' min'); }
   function calc() {
@@ -488,36 +605,82 @@
   });
   calc();
 
+  // ---------- Qualitäts-Vergleich (links Original, rechts gewählte Auflösung) ----------
+  var cmpRes = 480, split = 0.5, detail = new Image();
+  var cv = $('#cmp'), box = $('#compare'), ctx = cv.getContext('2d');
+  var low = document.createElement('canvas');
+  function drawCmp() {
+    if (!detail.complete || !detail.naturalWidth) return;
+    var dpr = window.devicePixelRatio || 1, W = box.clientWidth, H = box.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    // Ausschnitt in der Bildmitte (Stadt + HUD), so wirkt es wie ein Zoom in den Clip
+    var sx = 560, sy = 380, sw = 960, sh = 540;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(detail, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    // rechte Seite: auf die Zielauflösung verkleinern und pixelig wieder vergrößern
+    var k = cmpRes / 1080;
+    low.width = Math.max(8, Math.round(sw * k)); low.height = Math.max(4, Math.round(sh * k));
+    var lc = low.getContext('2d'); lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = 'high';
+    lc.drawImage(detail, sx, sy, sw, sh, 0, 0, low.width, low.height);
+    var x = Math.round(cv.width * split);
+    ctx.save(); ctx.beginPath(); ctx.rect(x, 0, cv.width - x, cv.height); ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(low, 0, 0, low.width, low.height, 0, 0, cv.width, cv.height);
+    ctx.restore();
+    $('#cmp-handle').style.left = (split * 100) + '%';
+    $('#cmp-tag').textContent = cmpRes === 2160 ? '4K' : cmpRes + 'p';
+    var h = cmpRes, w = Math.round(h * 16 / 9 / 2) * 2, br = Math.min(80e6, Math.max(1.5e6, w * h * 60 * 0.07));
+    var mb = (br * 1.1 + 160e3) / 8 * 65 / 1048576 + 110 + w * h * 24 / 1048576;
+    $('#resinfo').innerHTML = (lang === 'de' ? 'Rechts: <b>' : 'Right: <b>') + $('#cmp-tag').textContent + '</b> · ' + w + '×' + h + ' · ' +
+      (lang === 'de' ? '1-Minuten-Clip bei 60 fps ≈ <b>' : '1-minute clip at 60 fps ≈ <b>') + Math.round(mb) + ' MB RAM</b>';
+  }
+  detail.onload = drawCmp;
+  detail.src = 'img/detail.webp';
+  window.addEventListener('resize', drawCmp);
+  $('#resbar').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    $$('button', $('#resbar')).forEach(function (x) { x.classList.toggle('on', x === b); });
+    cmpRes = +b.dataset.v; drawCmp();
+  });
+  var dragging = false;
+  function setSplit(ev) { var r = box.getBoundingClientRect(); split = Math.min(.97, Math.max(.03, (ev.clientX - r.left) / r.width)); drawCmp(); }
+  box.addEventListener('pointerdown', function (e) { dragging = true; box.setPointerCapture(e.pointerId); setSplit(e); });
+  box.addEventListener('pointermove', function (e) { if (dragging) setSplit(e); });
+  box.addEventListener('pointerup', function () { dragging = false; });
+
+  // ---------- Sprache ----------
   var T = { de: {
-    nav_how:'So funktioniert’s', nav_features:'Funktionen', nav_setup:'Einrichtung', nav_download:'Download',
-    badge_new:'Kostenlos', badge_t:'Immer bereit zum Clippen',
+    nav_how:'So funktioniert’s', nav_features:'Funktionen', nav_quality:'Qualität', nav_download:'Download',
+    badge_new:'Kostenlos', badge_t:'Immer bereit zum Clippen', last:'letzte', toast_t:'Clip gespeichert',
     h1a:'Dieser Moment?', h1b:'Schon gespeichert.',
     lead:'Clipline nimmt leise im Hintergrund auf und hält die letzten Minuten im Arbeitsspeicher. Eine Taste, und der Moment, den du gerade gesehen hast, wird zum Clip – ohne Aufnahme zu starten, ohne riesige Dateien, fast ohne CPU.',
     other:'Anderes System', version:'Version', all_dl:'alle Downloads auf GitHub',
+    s1:'eines CPU-Kerns bei 1080p60', s2:'auf der Festplatte, bis du clippst', s3:'laufender Replay-Puffer', s4:'Windows, Linux und macOS',
     how_l:'So funktioniert’s', how_h:'Einmal einrichten. Vergessen, dass es da ist.', how_s:'Clipline startet mit deinem Computer und wartet im Tray. Du merkst es erst, wenn du es brauchst.',
-    st1_h:'Wählen', st1_p:'Beim ersten Start Clips-Ordner, Cliplänge und Qualität wählen. Clipline zeigt dir, wie viel RAM das braucht.',
+    st1_h:'Wählen', st1_p:'Clips-Ordner, Cliplänge, Qualität und deine Taste wählen. Clipline zeigt dir vorher, wie viel RAM das braucht.',
     st2_h:'Spielen', st2_p:'Zocken, streamen, arbeiten – Clipline hält die letzten Minuten im Speicher und nutzt dafür deine Grafikkarte.',
-    st3_h:'Clippen', st3_p:'Etwas Geniales passiert? Hotkey drücken. Die letzten Momente landen als MP4 mit Ton in deinem Ordner.',
+    st3_h:'Clippen', st3_p:'Etwas Geniales passiert? Taste drücken. Die letzten Momente landen als MP4 mit Ton in deinem Ordner.',
     f_l:'Funktionen', f_h:'Kleines Programm. Große Momente.', f_s:'Alles, was ein Replay-Puffer können muss – und nichts, was stört.',
     b1_h:'RAM kennen, bevor es losgeht', b1_p:'Clips liegen im Speicher, bis du sie sicherst. Schieb den Regler und sieh genau, was es kostet – probier es aus:',
     c_len:'Cliplänge', c_ram:'Geschätzter RAM',
-    b2_h:'Eine Taste', b2_p:'Funktioniert in Spielen und im Vollbild. Frei änderbar.',
-    b3_h:'Immer die letzten Momente', b3_p:'Ein laufender Puffer von 10 Sekunden bis 10 Minuten. Altes fällt einfach weg – deine Festplatte bleibt sauber.', now:'JETZT',
-    b4_h:'Kaum spürbar', b4_p:'Die Aufnahme läuft auf der Grafikkarte (NVIDIA, AMD, Intel, Apple). Rund 5 % eines CPU-Kerns bei 1080p60 – im Spiel merkst du davon nichts.',
-    b5_h:'Clip-Galerie', b5_p:'Clipline öffnen und alle Clips mit Vorschau, Länge und Größe sehen. Abspielen, umbenennen, im Ordner zeigen.',
+    b2_h:'Deine Taste', b2_p:'Beim ersten Start oder in den Einstellungen jede Kombination aufnehmen. Funktioniert in Spielen und im Vollbild.',
+    b4_h:'Kaum spürbar', b4_p:'Die Aufnahme läuft auf der Grafikkarte (NVIDIA, AMD, Intel, Apple). Im Spiel merkst du davon nichts.',
+    b5_h:'Clip-Galerie', b5_p:'Jeder Clip mit Vorschau, Länge und Größe. Abspielen, umbenennen, im Ordner zeigen.',
     b6_h:'Mit Ton', b6_p:'Systemton und Mikrofon, gemischt im Clip.',
-    b7_h:'Startet mit dir', b7_p:'Autostart im Hintergrund – kein Fenster, nur ein kleines Tray-Symbol.',
-    b8_h:'Gemacht für Cutline', b8_p:'Installiere Cutline, unseren einfachen Video-Editor, und jeder Clip öffnet sich mit einem Klick darin – kürzen, Namen verpixeln, Musik drunter. Cutline zeigt deine Clipline-Clips auch direkt in seiner Leiste.',
-    s_l:'Erster Start', s_h:'Vier schnelle Entscheidungen.', s_s:'Ordner, Cliplänge, Qualität und Aussehen. Alles lässt sich später in den Einstellungen ändern.',
-    t1:'Ordner', t2:'Cliplänge', t3:'Qualität', t4:'Aussehen',
+    b7_h:'Startet mit dir', b7_p:'Autostart im Hintergrund – kein Fenster, nur ein kleines Tray-Symbol. Öffnest du es, landest du in deinem Clip-Ordner.',
+    b8_h:'Gemacht für Cutline', b8_p:'Mit Cutline öffnet sich jeder Clip mit einem Klick im Editor – und Cutline zeigt deine Clips direkt in seiner Leiste.',
+    q_l:'Qualität', qq_h:'Sieh den Unterschied, bevor du wählst.', qq_s:'Niedrigere Auflösungen sparen Speicher, höhere behalten jedes Detail. Zieh den Regler und wechsle die Auflösung.',
+    s_l:'Erster Start', s_h:'Vier schnelle Entscheidungen.', s_s:'Ordner, Cliplänge & Qualität, deine Taste und das Aussehen. Alles lässt sich später in den Einstellungen ändern.',
+    t1:'Ordner', t2:'Länge & Qualität', t3:'Hotkey & Ton', t4:'Aussehen', t5:'Clip-Galerie',
     d_l:'Download', d_h:'Hol dir Clipline.', d_s:'Für alle kostenlos. System wählen – jede Datei kommt direkt von GitHub Releases.',
     d_note:'macOS: beim ersten Start Bildschirmaufnahme in den Systemeinstellungen erlauben; die App ist nicht notarisiert, also beim ersten Mal Rechtsklick → Öffnen. Linux: läuft am besten in X11-Sitzungen.',
     sis_h:'Clips bearbeiten?', sis_p:'Cutline ist unser einfacher, schneller Video-Editor – und ein richtig guter Video-Player.', sis_b:'Cutline holen',
     q_h:'Fragen',
-    q1:'Nimmt es die ganze Zeit auf?', q1a:'Ja, aber nur in den Arbeitsspeicher. Auf die Festplatte kommt erst etwas, wenn du den Hotkey drückst, und Altes wird laufend verworfen.',
+    q1:'Nimmt es die ganze Zeit auf?', q1a:'Ja, aber nur in den Arbeitsspeicher. Auf die Festplatte kommt erst etwas, wenn du deine Taste drückst, und Altes wird laufend verworfen.',
     q2:'Macht es meine Spiele langsamer?', q2a:'Clipline kodiert auf der Grafikkarte, die CPU-Last ist winzig. Ohne Hardware-Encoder nutzt es einen sehr schnellen Software-Encoder.',
     q3:'Wie viel RAM braucht es?', q3a:'Das hängt von Cliplänge und Qualität ab – die Einrichtung zeigt die Schätzung live. Ein 1-Minuten-Clip in 1080p60 braucht insgesamt etwa 230 MB.',
-    q4:'Ist es wirklich kostenlos?', q4a:'Ja. Clipline ist Open Source unter der MIT-Lizenz.'
+    q4:'Ist es wirklich kostenlos?', q4a:'Ja. Clipline ist Open Source unter der MIT-Lizenz.',
+    cta_h:'Verpass nie wieder den Moment.', cta_s:'In einer Minute eingerichtet. Bereit, wenn es darauf ankommt.', cta_b:'Clipline herunterladen'
   } };
   var orig = {};
   $$('[data-i18n]').forEach(function (el) { orig[el.dataset.i18n] = el.innerHTML; });
@@ -525,7 +688,7 @@
     lang = l; document.documentElement.lang = l;
     $$('[data-i18n]').forEach(function (el) { var k = el.dataset.i18n, v = l === 'en' ? orig[k] : (T[l] && T[l][k]); if (v != null) el.innerHTML = v; });
     $$('img.loc').forEach(function (img) { img.src = img.dataset.src.replace('{lang}', l); });
-    render();
+    render(); drawCmp();
     try { localStorage.setItem('lang', l); } catch (e) {}
   }
   var sel = $('#lang'), saved = null;
@@ -535,6 +698,7 @@
   sel.addEventListener('change', function () { applyLang(sel.value); });
   applyLang(start);
 
+  // ---------- Einblenden ----------
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }); }, { threshold: .12 });
     $$('.reveal').forEach(function (el) { io.observe(el); });

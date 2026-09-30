@@ -102,6 +102,13 @@ static const QHash<QString, QString>& german() {
         {"Primary", "Hauptbildschirm"},
         {"About", "Über"},
         {"Newest first", "Neueste zuerst"},
+        {"Clip length & quality", "Cliplänge & Qualität"},
+        {"Hotkey & sound", "Hotkey & Ton"},
+        {"Look", "Aussehen"},
+        {"Your clip key", "Deine Clip-Taste"},
+        {"Click the button and press the combination you want. Works everywhere, even in games.",
+         "Klick auf den Knopf und drück die gewünschte Kombination. Funktioniert überall, auch in Spielen."},
+        {"Sound", "Ton"},
     };
     return h;
 }

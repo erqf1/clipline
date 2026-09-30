@@ -71,14 +71,16 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         SetupWizard wiz(cfg);
         auto* stack = wiz.findChild<QStackedWidget*>();
         for (int i = 0; i < 4; ++i) {
-            stack->setCurrentIndex(i);
+            wiz.go(i);
             shot(&wiz, QString("wizard%1").arg(i + 1));
         }
+        Q_UNUSED(stack);
+        detailScene().save(dir + "/detail.png");
     }
     {
         SettingsDialog dlg(cfg);
         auto* tabs = dlg.findChild<QTabWidget*>();
-        tabs->setCurrentIndex(2);
+        tabs->setCurrentIndex(1);
         shot(&dlg, "settings");
     }
     Controller::noRecord = secs <= 0;
