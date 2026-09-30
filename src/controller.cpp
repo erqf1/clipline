@@ -54,10 +54,7 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
         };
         uo.quit = [this] { quit(); };
         updater_ = new Updater(uo, this);
-        QTimer::singleShot(15000, this, [this] { updater_->check(false); });
-        auto* daily = new QTimer(this);
-        connect(daily, &QTimer::timeout, this, [this] { updater_->check(false); });
-        daily->start(24 * 3600 * 1000);
+        updater_->startAutoCheck(15000);
     }
 
     connect(&hotkey_, &GlobalHotkey::activated, this, &Controller::saveClip);

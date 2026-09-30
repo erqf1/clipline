@@ -1,6 +1,7 @@
 #include "updater.h"
 
 #include <QApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -61,6 +62,13 @@ Updater::Updater(Options o, QObject* parent) : QObject(parent), o_(std::move(o))
     if (qEnvironmentVariableIsSet("UPDATER_FAKE_VERSION")) o_.version = qEnvironmentVariable("UPDATER_FAKE_VERSION");
 }
 
+void Updater::startAutoCheck(int firstDelayMs) {
+    QTimer::singleShot(firstDelayMs, this, [this] { check(false); });
+    auto* hourly = new QTimer(this);
+    connect(hourly, &QTimer::timeout, this, [this] { check(false); });
+    hourly->start(60 * 60 * 1000);
+}
+
 void Updater::check(bool manual) {
     if (busy_) return;
     busy_ = true;
@@ -71,13 +79,16 @@ void Updater::check(bool manual) {
     QNetworkReply* r = net_->get(req);
     connect(r, &QNetworkReply::finished, this, [this, r, manual] {
         r->deleteLater();
-        busy_ = false;
         const QJsonObject rel = QJsonDocument::fromJson(r->readAll()).object();
         if (r->error() != QNetworkReply::NoError || rel.isEmpty()) {
             if (manual) QMessageBox::warning(o_.parent ? o_.parent() : nullptr, o_.appName, r->errorString());
+            // Automatische Suche gescheitert (offline, GitHub-Limit): in 10 Minuten nochmal
+            else QTimer::singleShot(10 * 60 * 1000, this, [this] { check(false); });
+            busy_ = false;
             return;
         }
-        onRelease(rel, manual);
+        onRelease(rel, manual);  // blockiert, solange die Frage offen ist
+        busy_ = installing_;     // während des Downloads keine neue Suche
     });
 }
 
@@ -102,6 +113,10 @@ void Updater::onRelease(const QJsonObject& rel, bool manual) {
     }
     // "Dieses Update ignorieren": erst bei der nächsten neuen Version wieder melden
     if (!manual && st.value("update/ignored").toString() == tag) return;
+    // "Später": erst wieder fragen, wenn eine noch neuere Version erscheint oder zwei Wochen um sind
+    if (!manual && st.value("update/later").toString() == tag &&
+        QDateTime::currentDateTime() < st.value("update/laterUntil").toDateTime())
+        return;
 
     QMessageBox box(parent);
     box.setIcon(QMessageBox::Information);
@@ -118,7 +133,11 @@ void Updater::onRelease(const QJsonObject& rel, bool manual) {
         st.setValue("update/ignored", tag);
         return;
     }
-    if (box.clickedButton() != bNow) return;
+    if (box.clickedButton() != bNow) {
+        st.setValue("update/later", tag);
+        st.setValue("update/laterUntil", QDateTime::currentDateTime().addDays(14));
+        return;
+    }
     if (o_.beforeInstall && !o_.beforeInstall()) return;
 
     QString url;
@@ -167,6 +186,7 @@ void Updater::download(const QString& url, const QString& name, const QString& p
     const QString path = dir + "/" + name;
     auto file = std::make_shared<QFile>(path);
     if (!file->open(QIODevice::WriteOnly)) return fail(page);
+    installing_ = true;
 
     auto* dlg = new QProgressDialog(tx.downloading, tx.cancel, 0, 1000, o_.parent ? o_.parent() : nullptr);
     dlg->setWindowTitle(o_.appName);
@@ -184,6 +204,7 @@ void Updater::download(const QString& url, const QString& name, const QString& p
     connect(dlg, &QProgressDialog::canceled, r, &QNetworkReply::abort);
     connect(r, &QNetworkReply::finished, this, [this, r, file, dlg, path, page, tag] {
         r->deleteLater();
+        installing_ = busy_ = false;  // bei Erfolg beendet sich die App gleich ohnehin
         const bool cancelled = dlg->wasCanceled();
         dlg->close();
         dlg->deleteLater();

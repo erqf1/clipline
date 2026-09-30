@@ -1,4 +1,5 @@
 #pragma once
+#include <QDateTime>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -41,6 +42,8 @@ public:
     explicit Updater(Options o, QObject* parent = nullptr);
     // manual = vom Nutzer angestoßen: zeigt auch ignorierte Versionen und "schon aktuell"
     void check(bool manual = false);
+    // Automatisch: kurz nach dem Start und dann stündlich (scheitert eine Suche, nach 10 Minuten nochmal)
+    void startAutoCheck(int firstDelayMs);
 
 private:
     void onRelease(const QJsonObject& rel, bool manual);
@@ -51,5 +54,6 @@ private:
 
     Options o_;
     QNetworkAccessManager* net_;
-    bool busy_ = false;
+    bool busy_ = false;        // Suche, Frage oder Download läuft: keine zweite Suche starten
+    bool installing_ = false;
 };
