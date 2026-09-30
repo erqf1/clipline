@@ -24,12 +24,12 @@
   [data-theme="dark"] {
     --bg:#08070c; --bg2:#0d0b13; --card:#13111b; --card2:#1a1724; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
     --text:#f1eff7; --muted:#958fa8; --label:#ff7a8a; --shadow:0 30px 80px -20px rgba(0,0,0,.75);
-    --glow1:rgba(255,95,109,.24); --glow2:rgba(139,92,246,.24); --grid:rgba(255,255,255,.035);
+    --glow1:rgba(255,95,109,.24); --glow2:rgba(139,92,246,.24); --grid:rgba(255,255,255,.085);
   }
   [data-theme="light"] {
     --bg:#f8f6fb; --bg2:#ffffff; --card:#ffffff; --card2:#f2eff8; --line:rgba(30,20,50,.09); --line2:rgba(30,20,50,.16);
     --text:#15121d; --muted:#625b74; --label:#e03a55; --shadow:0 30px 70px -25px rgba(90,50,120,.35);
-    --glow1:rgba(255,95,109,.18); --glow2:rgba(139,92,246,.16); --grid:rgba(30,20,60,.045);
+    --glow1:rgba(255,95,109,.18); --glow2:rgba(139,92,246,.16); --grid:rgba(30,20,60,.10);
   }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; scroll-padding-top:80px; }
@@ -59,7 +59,7 @@
     background:radial-gradient(700px 420px at 18% 0%,var(--glow1),transparent 70%),radial-gradient(700px 420px at 84% 8%,var(--glow2),transparent 70%); }
   .hero::after { content:""; position:absolute; inset:0; z-index:-1;
     background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px); background-size:56px 56px;
-    -webkit-mask:radial-gradient(70% 60% at 50% 25%,#000,transparent 75%); mask:radial-gradient(70% 60% at 50% 25%,#000,transparent 75%); }
+    -webkit-mask:radial-gradient(85% 75% at 50% 30%,#000 35%,transparent 85%); mask:radial-gradient(85% 75% at 50% 30%,#000 35%,transparent 85%); }
   .hero-logo { width:92px; height:92px; margin:0 auto 22px; filter:drop-shadow(0 16px 36px rgba(255,95,109,.35)); }
   .badge { display:inline-flex; align-items:center; gap:9px; padding:6px 14px 6px 8px; border-radius:999px; border:1px solid var(--line2); background:var(--card); font-size:14px; color:var(--muted); }
   .badge b { background:var(--grad); color:#fff; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:650; }
