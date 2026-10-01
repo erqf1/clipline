@@ -20,6 +20,7 @@ class HotkeyButton : public QPushButton {
 public:
     explicit HotkeyButton(const QString& seq, QWidget* parent = nullptr);
     QString sequence() const { return seq_; }
+    void setAllowClear(bool on) { allowClear_ = on; }  // Rücktaste/Entf entfernt die Taste
 
 signals:
     void sequenceChanged(const QString& seq);
@@ -33,7 +34,7 @@ private:
     void stopRecording();
     void updateText();
     QString seq_;
-    bool recording_ = false;
+    bool recording_ = false, allowClear_ = false;
 };
 
 // Zeigt ein echtes Foto genau in der gewählten Aufnahmeauflösung: Das Foto wird auf diese Auflösung
@@ -68,6 +69,7 @@ public:
     void setDevice(const QString& mic);
     void setThreshold(int db);
     void setAccent(const QColor& c) { accent_ = c; update(); }
+    void setDenoise(bool on) { meter_.setDenoise(on); }
 
 protected:
     void paintEvent(QPaintEvent*) override;

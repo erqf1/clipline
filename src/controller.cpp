@@ -26,6 +26,8 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     open->setFont(f);
     actSave_ = menu_.addAction(L("Save clip"), this, &Controller::saveClip);
     actPause_ = menu_.addAction(QString(), this, &Controller::togglePause);
+    actMute_ = menu_.addAction(QString(), this, &Controller::toggleMute);
+    actMute_->setCheckable(true);
     menu_.addSeparator();
     menu_.addAction(L("Open folder"), this, [this] { revealInFolder(cfg_.clipsDir); });
     menu_.addAction(L("Settings"), this, &Controller::openSettings);
@@ -58,6 +60,7 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     }
 
     connect(&hotkey_, &GlobalHotkey::activated, this, &Controller::saveClip);
+    connect(&muteHotkey_, &GlobalHotkey::activated, this, &Controller::toggleMute);
     connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);
     connect(&rec_, &Recorder::warning, this, [this](const QString& w) {
         notify("Clipline", w, QSystemTrayIcon::Warning, 6000);
@@ -129,6 +132,12 @@ void Controller::applyConfig(const Config& c, bool first) {
 
 void Controller::registerHotkey() {
     if (quiet) return;
+    muteHotkey_.clear();
+    if (!cfg_.muteHotkey.isEmpty() && !cfg_.mic.isEmpty() && !muteHotkey_.set(cfg_.muteHotkey)) {
+        const QString key = QKeySequence(cfg_.muteHotkey).toString(QKeySequence::NativeText);
+        notify("Clipline", L("The hotkey %1 is already used by another program. Choose a different one in the settings.").arg(key),
+               QSystemTrayIcon::Warning, 8000);
+    }
     hotkeyOk_ = hotkey_.set(cfg_.hotkey);
     if (!hotkeyOk_) {
         const QString key = QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText);
@@ -144,9 +153,14 @@ void Controller::refreshTray() {
     const bool rec = rec_.wanted();
     tray_.setIcon(QIcon(cliplineLogo(64, rec && rec_.running(), !rec)));
     const QString key = QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText);
-    tray_.setToolTip(rec ? QString("Clipline – %1 · %2 = %3").arg(L("Recording"), key, L("last %1").arg(fmtDuration(cfg_.clipSeconds)))
-                         : QString("Clipline – %1").arg(L("Paused")));
+    tray_.setToolTip((rec ? QString("Clipline – %1 · %2 = %3").arg(L("Recording"), key, L("last %1").arg(fmtDuration(cfg_.clipSeconds)))
+                          : QString("Clipline – %1").arg(L("Paused"))) +
+                     (rec_.micMuted() ? " · " + L("Microphone muted") : QString()));
     actPause_->setText(rec ? L("Pause recording") : L("Resume recording"));
+    actMute_->setVisible(!cfg_.mic.isEmpty());
+    actMute_->setChecked(rec_.micMuted());
+    const QString muteKey = QKeySequence(cfg_.muteHotkey).toString(QKeySequence::NativeText);
+    actMute_->setText(L("Mute microphone") + (muteKey.isEmpty() ? QString() : QStringLiteral("\t") + muteKey));
     actSave_->setText(L("Save clip") + "\t" + key);
     actSave_->setEnabled(rec);
     if (gallery_) gallery_->updateStatus();
@@ -186,10 +200,21 @@ void Controller::openSettings() {
     if (settingsOpen_) return;
     settingsOpen_ = true;
     hotkey_.clear();  // sonst fängt der globale Hotkey die Eingabe im Tastenfeld ab
+    muteHotkey_.clear();
     SettingsDialog dlg(cfg_, gallery_);
     if (dlg.exec() == QDialog::Accepted) applyConfig(dlg.config(), false);
     else { applyLook(cfg_); registerHotkey(); }
     settingsOpen_ = false;
+}
+
+// Mikrofon stumm/an (Hotkey oder Tray-Menü) - wirkt sofort, die Aufnahme läuft weiter
+void Controller::toggleMute() {
+    if (cfg_.mic.isEmpty()) return;
+    rec_.setMicMuted(!rec_.micMuted());
+    notify(rec_.micMuted() ? L("Microphone muted") : L("Microphone on"),
+           rec_.micMuted() ? L("Your voice is not recorded until you press the key again.") : QString(),
+           QSystemTrayIcon::Information, 1500);
+    refreshTray();
 }
 
 void Controller::quit() {

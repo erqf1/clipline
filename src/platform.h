@@ -52,8 +52,11 @@ private:
 // über eine Named Pipe an ffmpeg gegeben. Jede weitere Echtzeit-Tonquelle, die ffmpeg selbst einliest,
 // bremst die Bildschirmaufnahme stark aus (bis auf ~1 Bild pro Sekunde).
 struct MicTuning {
-    int gateDb = -45;   // Rauschsperre: leiser als das wird stummgeschaltet; <= -80 = aus
-    int volume = 100;   // Prozent
+    int gateDb = -45;        // Rauschsperre: leiser als das wird stummgeschaltet; <= -80 = aus
+    int micVolume = 100;     // Prozent (0..200)
+    int systemVolume = 100;  // Prozent (0..200)
+    bool denoise = true;     // RNNoise: Tastatur-/Mausklicks und Hintergrundrauschen entfernen
+    bool muted = false;      // Mikrofon stumm (Hotkey)
 };
 
 class SystemAudioPipe {
@@ -62,6 +65,7 @@ public:
     ~SystemAudioPipe();
     // false = weder Systemton noch Mikrofon verfügbar
     bool prepare(bool systemSound, const QString& mic, const MicTuning& tuning);
+    void setTuning(const MicTuning& tuning);  // wirkt sofort, ohne die Aufnahme neu zu starten
     QString pipePath() const;
     static QString ffmpegFormat() { return "f32le"; }
     static int rate() { return 48000; }
@@ -80,6 +84,7 @@ public:
     MicLevelMeter();
     ~MicLevelMeter();
     bool start(const QString& mic);  // false = nicht unterstützt / Gerät fehlt
+    void setDenoise(bool on);        // Pegel nach der Klick-/Rauschunterdrückung anzeigen
     void stop();
     float levelDb() const;           // -90 .. 0
 
@@ -88,3 +93,5 @@ private:
     std::unique_ptr<Impl> d;
 };
 bool micMeterSupported();
+// Entwickler-Test: rohe Stereo-float-Datei (48 kHz) durch die Mikrofon-Kette schicken
+bool processMicFile(const QString& inRaw, const QString& outRaw, const MicTuning& tuning);

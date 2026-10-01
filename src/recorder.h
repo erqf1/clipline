@@ -17,6 +17,8 @@ public:
     ~Recorder() override;
 
     void setConfig(const Config& c);  // startet bei geänderten Aufnahmeparametern neu
+    void setMicMuted(bool muted);
+    bool micMuted() const { return micMuted_; }
     void start();
     void stop();
     bool wanted() const { return wanted_; }
@@ -44,6 +46,8 @@ private:
     void onOutput();
     void onFinished();
     bool captureChanged(const Config& a, const Config& b) const;
+    MicTuning tuning() const;
+    void applyTuning();
 
     Config cfg_;
     QString encoder_;
@@ -53,7 +57,7 @@ private:
     qint64 total_ = 0;
     QElapsedTimer clock_, runTime_;
     QTimer retry_;
-    bool wanted_ = false, audioOk_ = true, gotData_ = false;
+    bool wanted_ = false, audioOk_ = true, gotData_ = false, micMuted_ = false;
     int fails_ = 0;
     QByteArray errTail_;
 };

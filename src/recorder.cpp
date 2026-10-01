@@ -55,14 +55,47 @@ bool Recorder::captureChanged(const Config& a, const Config& b) const {
            a.systemAudio != b.systemAudio || a.mic != b.mic;
 }
 
+MicTuning Recorder::tuning() const {
+    MicTuning t;
+    t.gateDb = cfg_.micGate;
+    t.micVolume = cfg_.micVolume;
+    t.systemVolume = cfg_.systemVolume;
+    t.denoise = cfg_.micDenoise;
+    t.muted = micMuted_;
+    return t;
+}
+
+// Lautstärken, Sperre, Unterdrückung, Stumm: unter Windows live im Ton-Mischer (keine Lücke im Puffer),
+// sonst stecken sie in den ffmpeg-Filtern -> Aufnahme neu starten
+void Recorder::applyTuning() {
+#if defined(Q_OS_WIN)
+    if (sysAudio_) sysAudio_->setTuning(tuning());
+#else
+    if (wanted_) {
+        stop();
+        start();
+    }
+#endif
+}
+
 void Recorder::setConfig(const Config& c) {
     const bool restart = captureChanged(cfg_, c) && wanted_;
+    const Config old = cfg_;
     cfg_ = c;
     if (restart) {
         audioOk_ = true;
         stop();
         start();
+    } else if (old.micGate != c.micGate || old.micVolume != c.micVolume || old.systemVolume != c.systemVolume ||
+               old.micDenoise != c.micDenoise) {
+        applyTuning();
     }
+}
+
+void Recorder::setMicMuted(bool muted) {
+    if (micMuted_ == muted) return;
+    micMuted_ = muted;
+    applyTuning();
 }
 
 void Recorder::start() {
@@ -124,9 +157,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     // Echtzeit-Quellen (Loopback + DirectShow-Mikrofon) bremsten die Bildschirmaufnahme auf ~1 fps.
     if (withAudio && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
         sysAudio_ = std::make_unique<SystemAudioPipe>();
-        MicTuning tuning;
-        tuning.gateDb = cfg_.micGate;
-        if (sysAudio_->prepare(cfg_.systemAudio, cfg_.mic, tuning)) {
+        if (sysAudio_->prepare(cfg_.systemAudio, cfg_.mic, tuning())) {
             a << "-thread_queue_size" << "1024" << "-f" << SystemAudioPipe::ffmpegFormat() << "-ar"
               << QString::number(SystemAudioPipe::rate()) << "-ac" << QString::number(SystemAudioPipe::channels()) << "-i"
               << sysAudio_->pipePath();
@@ -164,16 +195,19 @@ QStringList Recorder::buildArgs(bool withAudio) {
     if (out != native) vf += QString("scale=%1:%2:flags=bicubic,").arg(out.width()).arg(out.height());
     vf += encoder_ == "libx264" ? "format=yuv420p" : "format=nv12";
     QStringList fc = {QString("[0:v]%1[v]").arg(vf)};
-    // Rauschsperre fürs Mikrofon (unter Windows macht das der Ton-Mischer selbst)
-    const QString gate = cfg_.micGate > -80
-        ? QString("agate=threshold=%1:ratio=20:attack=5:release=120:range=0.001").arg(std::pow(10.0, cfg_.micGate / 20.0), 0, 'f', 6)
-        : QString();
+    // macOS/Linux: Mikrofon (Rauschunterdrückung, Sperre, Lautstärke, stumm) und Systemton-Lautstärke als
+    // ffmpeg-Filter. Unter Windows erledigt das alles der eigene Ton-Mischer (sysAudio_), dort nichts doppelt.
+    QStringList micF;
+    if (cfg_.micDenoise) micF << "afftdn=nf=-25:tn=1";
+    if (cfg_.micGate > -80)
+        micF << QString("agate=threshold=%1:ratio=20:attack=5:release=120:range=0.001")
+                    .arg(std::pow(10.0, cfg_.micGate / 20.0), 0, 'f', 6);
+    micF << QString("volume=%1").arg(micMuted_ ? 0.0 : cfg_.micVolume / 100.0, 0, 'f', 2);
+    const QString sysF = QString("volume=%1").arg(cfg_.systemVolume / 100.0, 0, 'f', 2);
     auto src = [&](int input) {
-        if (input == micInput && !gate.isEmpty()) {
-            fc << QString("[%1:a]%2[m%1]").arg(input).arg(gate);
-            return QString("[m%1]").arg(input);
-        }
-        return QString("%1:a").arg(input);
+        if (sysAudio_) return QString("%1:a").arg(input);  // Windows: genau eine Tonquelle, direkt zuordnen
+        fc << QString("[%1:a]%2[s%1]").arg(input).arg(input == micInput ? micF.join(',') : sysF);
+        return QString("[s%1]").arg(input);
     };
     QString amap;
     if (audioInVideoInput) {
@@ -182,8 +216,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
         amap = src(1);
     } else if (audioInputs == 2) {
         const QString x = src(1), y = src(2);
-        auto lbl = [](const QString& l) { return l.startsWith('[') ? l : "[" + l + "]"; };
-        fc << QString("%1%2amix=inputs=2:duration=longest:normalize=0[a]").arg(lbl(x), lbl(y));
+        fc << QString("%1%2amix=inputs=2:duration=longest:normalize=0[a]").arg(x, y);
         amap = "[a]";
     }
     a << "-filter_complex" << fc.join(";") << "-map" << "[v]";

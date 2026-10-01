@@ -32,6 +32,7 @@ public slots:
     void saveClip();
     void openSettings();
     void togglePause();
+    void toggleMute();
     void galleryClosed();
     void quit();
 
@@ -45,10 +46,10 @@ private:
 
     Config cfg_;
     Recorder rec_;
-    GlobalHotkey hotkey_;
+    GlobalHotkey hotkey_, muteHotkey_;
     QMenu menu_;  // vor tray_: muss länger leben als das Tray-Symbol
     QSystemTrayIcon tray_;
-    QAction *actSave_, *actPause_;
+    QAction *actSave_, *actPause_, *actMute_;
     QPointer<GalleryWindow> gallery_;
     QLocalServer server_;
     bool toldBackground_ = false, hotkeyOk_ = true, settingsOpen_ = false;

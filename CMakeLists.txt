@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Clipline VERSION 1.3.2 LANGUAGES CXX)
+project(Clipline VERSION 1.4.0 LANGUAGES C CXX)
 if(WIN32)
     enable_language(RC)
 endif()
@@ -10,6 +10,20 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
+
+# RNNoise (BSD): entfernt Tastatur-/Mausklicks und Hintergrundgeräusche aus dem Mikrofon
+add_library(rnnoise STATIC
+    third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c third_party/rnnoise/src/rnn_data.c
+    third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c third_party/rnnoise/src/celt_lpc.c)
+target_include_directories(rnnoise PUBLIC third_party/rnnoise/include PRIVATE third_party/rnnoise/src)
+set_target_properties(rnnoise PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_definitions(rnnoise PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(rnnoise PRIVATE /w)
+else()
+    target_compile_options(rnnoise PRIVATE -w)
+    target_link_libraries(rnnoise PRIVATE m)
+endif()
 
 set(CLIPLINE_SOURCES
     src/main.cpp
@@ -51,7 +65,7 @@ else()
     endif()
 endif()
 
-target_link_libraries(clipline PRIVATE Qt6::Widgets Qt6::Network)
+target_link_libraries(clipline PRIVATE Qt6::Widgets Qt6::Network rnnoise)
 target_compile_definitions(clipline PRIVATE APP_VERSION="${PROJECT_VERSION}")
 if(MSVC)
     target_compile_options(clipline PRIVATE /utf-8 /W3 /Zc:__cplusplus)

@@ -60,6 +60,7 @@ struct SystemAudioPipe::Impl {};
 SystemAudioPipe::SystemAudioPipe() : d(new Impl) {}
 SystemAudioPipe::~SystemAudioPipe() = default;
 bool SystemAudioPipe::prepare(bool, const QString&, const MicTuning&) { return false; }
+void SystemAudioPipe::setTuning(const MicTuning&) {}
 QString SystemAudioPipe::pipePath() const { return QString(); }
 void SystemAudioPipe::start() {}
 void SystemAudioPipe::stop() {}
@@ -68,9 +69,11 @@ struct MicLevelMeter::Impl {};
 MicLevelMeter::MicLevelMeter() : d(new Impl) {}
 MicLevelMeter::~MicLevelMeter() = default;
 bool MicLevelMeter::start(const QString&) { return false; }
+void MicLevelMeter::setDenoise(bool) {}
 void MicLevelMeter::stop() {}
 float MicLevelMeter::levelDb() const { return -90.f; }
 bool micMeterSupported() { return false; }
+bool processMicFile(const QString&, const QString&, const MicTuning&) { return false; }
 #endif
 
 #ifndef Q_OS_WIN

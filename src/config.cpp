@@ -24,7 +24,11 @@ Config Config::load() {
     c.systemAudio = s.value("systemAudio", c.systemAudio).toBool();
     c.mic = s.value("mic", c.mic).toString();
     c.micGate = std::clamp(s.value("micGate", c.micGate).toInt(), -80, -10);
+    c.micVolume = std::clamp(s.value("micVolume", c.micVolume).toInt(), 0, 200);
+    c.systemVolume = std::clamp(s.value("systemVolume", c.systemVolume).toInt(), 0, 200);
+    c.micDenoise = s.value("micDenoise", c.micDenoise).toBool();
     c.hotkey = s.value("hotkey", c.hotkey).toString();
+    c.muteHotkey = s.value("muteHotkey", c.muteHotkey).toString();
     c.accent = s.value("accent", c.accent).toString();
     c.dark = s.value("dark", c.dark).toBool();
     c.autostart = s.value("autostart", c.autostart).toBool();
@@ -45,7 +49,11 @@ void Config::save() const {
     s.setValue("systemAudio", systemAudio);
     s.setValue("mic", mic);
     s.setValue("micGate", micGate);
+    s.setValue("micVolume", micVolume);
+    s.setValue("systemVolume", systemVolume);
+    s.setValue("micDenoise", micDenoise);
     s.setValue("hotkey", hotkey);
+    s.setValue("muteHotkey", muteHotkey);
     s.setValue("accent", accent);
     s.setValue("dark", dark);
     s.setValue("autostart", autostart);

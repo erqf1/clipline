@@ -14,6 +14,8 @@
 #include <QPainterPath>
 #include <QRandomGenerator>
 #include <QScreen>
+#include <QScrollArea>
+#include <functional>
 #include <QSlider>
 #include <QStyle>
 #include <cmath>
@@ -270,6 +272,12 @@ void HotkeyButton::keyPressEvent(QKeyEvent* e) {
     if (!recording_) return QPushButton::keyPressEvent(e);
     const int key = e->key();
     if (key == Qt::Key_Escape) return stopRecording();
+    if (allowClear_ && (key == Qt::Key_Backspace || key == Qt::Key_Delete) && !(e->modifiers() & ~Qt::KeypadModifier)) {
+        seq_.clear();  // Taste entfernen (z. B. keine Mikrofon-Stummtaste)
+        stopRecording();
+        emit sequenceChanged(seq_);
+        return;
+    }
     if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta ||
         key == Qt::Key_AltGr || key == Qt::Key_unknown)
         return;  // warten, bis eine "echte" Taste kommt
@@ -483,12 +491,37 @@ QWidget* ConfigPages::hotkeyPage() {
     v->addWidget(key);
     v->addSpacing(14);
 
+    // Regler mit Titel und Prozentangabe (Lautstärken 0..200 %)
+    auto volume = [](const QString& title, int value, std::function<void(int)> set) {
+        auto* box = new QWidget;
+        auto* bv = new QVBoxLayout(box);
+        bv->setContentsMargins(0, 0, 0, 0);
+        bv->setSpacing(4);
+        auto* head = label(QString());
+        auto* slider = new QSlider(Qt::Horizontal);
+        slider->setRange(0, 200);
+        slider->setSingleStep(5);
+        slider->setPageStep(10);
+        slider->setValue(value);
+        auto show = [head, title](int p) { head->setText("<b>" + title + "</b>  " + QString("%1 %").arg(p)); };
+        show(value);
+        QObject::connect(slider, &QSlider::valueChanged, box, [show, set](int p) { show(p); set(p); });
+        bv->addWidget(head);
+        bv->addWidget(slider);
+        return box;
+    };
+
     v->addWidget(label(L("Sound"), "h2"));
     auto* sys = new QCheckBox(L("System sound"));
     sys->setChecked(cfg_.systemAudio && systemAudioSupported());
     sys->setEnabled(systemAudioSupported());
     if (!systemAudioSupported()) sys->setToolTip(L("Not available on this system"));
     v->addWidget(sys);
+    auto* sysVol = volume(L("System sound volume"), cfg_.systemVolume, [this](int p) { cfg_.systemVolume = p; emit changed(); });
+    sysVol->setVisible(sys->isChecked());
+    v->addWidget(sysVol);
+    v->addSpacing(4);
+
     auto* form = new QFormLayout;
     auto* mic = new QComboBox;
     mic->addItem(L("None"), "");
@@ -497,43 +530,71 @@ QWidget* ConfigPages::hotkeyPage() {
     form->addRow(L("Microphone"), mic);
     v->addLayout(form);
 
+    // Alles, was nur mit Mikrofon Sinn ergibt
+    auto* micBox = new QWidget;
+    auto* mv = new QVBoxLayout(micBox);
+    mv->setContentsMargins(0, 4, 0, 0);
+    mv->setSpacing(8);
+    mv->addWidget(volume(L("Microphone volume"), cfg_.micVolume, [this](int p) { cfg_.micVolume = p; emit changed(); }));
+
+    auto* denoise = new QCheckBox(L("Filter out keyboard and mouse clicks (AI noise suppression)"));
+    denoise->setChecked(cfg_.micDenoise);
+    mv->addWidget(denoise);
+
     // Empfindlichkeit: Rauschsperre mit Live-Pegel, damit Hintergrundgeräusche nicht im Clip landen
-    auto* sens = new QWidget;
-    auto* sv = new QVBoxLayout(sens);
-    sv->setContentsMargins(0, 6, 0, 0);
-    sv->setSpacing(6);
     auto* sensTitle = label(QString());
-    sv->addWidget(sensTitle);
+    mv->addWidget(sensTitle);
     auto* meter = new MicMeter;
     meter->setAccent(makePalette(cfg_.accent, cfg_.dark).accent);
-    sv->addWidget(meter);
+    meter->setDenoise(cfg_.micDenoise);
+    mv->addWidget(meter);
     auto* gate = new QSlider(Qt::Horizontal);
     gate->setRange(-80, -10);
     gate->setValue(cfg_.micGate);
-    sv->addWidget(gate);
+    mv->addWidget(gate);
     auto* ends = new QHBoxLayout;
     ends->addWidget(label(L("Record everything"), "muted"));
     ends->addStretch();
     auto* endR = label(L("Only loud voices"), "muted");
     endR->setAlignment(Qt::AlignRight);
     ends->addWidget(endR);
-    sv->addLayout(ends);
-    sv->addWidget(label(L("Talk normally: the bar should turn green when you speak and stay grey when you are quiet. "
+    mv->addLayout(ends);
+    mv->addWidget(label(L("Talk normally: the bar should turn green when you speak and stay grey when you are quiet. "
                           "Everything below the line is muted, so background noise stays out of your clips."), "muted"));
-    v->addWidget(sens);
+
+    // Mikrofon stumm per Taste
+    mv->addSpacing(4);
+    mv->addWidget(label("<b>" + L("Mute key for the microphone") + "</b>"));
+    auto* muteKey = new HotkeyButton(cfg_.muteHotkey);
+    muteKey->setMinimumHeight(42);
+    muteKey->setAllowClear(true);
+    connect(muteKey, &HotkeyButton::sequenceChanged, this, [this](const QString& s) { cfg_.muteHotkey = s; emit changed(); });
+    mv->addWidget(muteKey);
+    mv->addWidget(label(L("Press it once and your voice is no longer recorded, press it again to switch the microphone back on. "
+                          "Backspace removes the key."), "muted"));
+    v->addWidget(micBox);
+
     auto showGate = [sensTitle, meter](int db) {
         sensTitle->setText("<b>" + L("Microphone sensitivity") + "</b>  " + (db <= -80 ? L("Off") : QString("%1 dB").arg(db)));
         meter->setThreshold(db);
     };
     showGate(cfg_.micGate);
-    sens->setVisible(!cfg_.mic.isEmpty());
+    micBox->setVisible(!cfg_.mic.isEmpty());
     meter->setDevice(cfg_.mic);
     connect(gate, &QSlider::valueChanged, this, [this, showGate](int db) { cfg_.micGate = db; showGate(db); emit changed(); });
-
-    connect(sys, &QCheckBox::toggled, this, [this](bool on) { cfg_.systemAudio = on; emit changed(); });
-    connect(mic, &QComboBox::currentIndexChanged, this, [this, mic, sens, meter] {
+    connect(denoise, &QCheckBox::toggled, this, [this, meter](bool on) {
+        cfg_.micDenoise = on;
+        meter->setDenoise(on);
+        emit changed();
+    });
+    connect(sys, &QCheckBox::toggled, this, [this, sysVol](bool on) {
+        cfg_.systemAudio = on;
+        sysVol->setVisible(on);
+        emit changed();
+    });
+    connect(mic, &QComboBox::currentIndexChanged, this, [this, mic, micBox, meter] {
         cfg_.mic = mic->currentData().toString();
-        sens->setVisible(!cfg_.mic.isEmpty());
+        micBox->setVisible(!cfg_.mic.isEmpty());
         meter->setDevice(cfg_.mic);
         emit changed();
     });
@@ -548,7 +609,17 @@ QWidget* ConfigPages::hotkeyPage() {
     connect(sound, &QCheckBox::toggled, this, [this](bool on) { cfg_.sound = on; emit changed(); });
     v->addWidget(sound);
     v->addStretch();
-    return w;
+
+    // Die Seite ist lang geworden: bei kleinen Fenstern scrollen statt quetschen
+    auto* scroll = new QScrollArea;
+    scroll->setObjectName("plain");
+    scroll->setWidget(w);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet("QScrollArea#plain { border: none; background: transparent; }"
+                          "QScrollArea#plain > QWidget > QWidget { background: transparent; }");
+    return scroll;
 }
 
 // 4: Aussehen
@@ -681,8 +752,9 @@ SettingsDialog::SettingsDialog(const Config& c, QWidget* parent) : QDialog(paren
     v->setContentsMargins(18, 18, 18, 18);
     auto* tabs = new QTabWidget;
     tabs->addTab(pages_->folderPage(false), L("General"));
-    tabs->addTab(pages_->recordingPage(), L("Clip length & quality"));
-    tabs->addTab(pages_->hotkeyPage(), L("Hotkey & sound"));
+    // "&" verdoppeln, sonst macht Qt daraus ein Tastenkürzel und es verschwindet
+    tabs->addTab(pages_->recordingPage(), L("Clip length & quality").replace("&", "&&"));
+    tabs->addTab(pages_->hotkeyPage(), L("Hotkey & sound").replace("&", "&&"));
     tabs->addTab(pages_->lookPage(), L("Look"));
     v->addWidget(tabs, 1);
     auto* row = new QHBoxLayout;

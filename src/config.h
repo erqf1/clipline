@@ -13,7 +13,11 @@ struct Config {
     bool systemAudio = true;
     QString mic;              // Gerätename, leer = kein Mikrofon
     int micGate = -45;        // Rauschsperre in dB: leiser wird stummgeschaltet, <= -80 = aus
+    int micVolume = 100;      // Prozent (0..200)
+    int systemVolume = 100;   // Prozent (0..200)
+    bool micDenoise = true;   // Tastatur-/Mausklicks und Rauschen aus dem Mikrofon entfernen
     QString hotkey = "Ctrl+Alt+S";
+    QString muteHotkey = "Ctrl+Alt+M";  // Mikrofon stumm/an, leer = keiner
     QString accent = "#ff4d6d";
     bool dark = true;
     bool autostart = true;

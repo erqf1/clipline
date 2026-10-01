@@ -185,6 +185,13 @@ int main(int argc, char* argv[]) {
         f.close();
         return rc;
     }
+    // Entwickler-Test: Mikrofon-Kette auf eine Datei anwenden (--micfile in.raw out.raw gate denoise)
+    if (const int mf = args.indexOf("--micfile"); mf >= 0 && mf + 4 < args.size()) {
+        MicTuning t;
+        t.gateDb = args[mf + 3].toInt();
+        t.denoise = args[mf + 4] == "1";
+        return processMicFile(args[mf + 1], args[mf + 2], t) ? 0 : 1;
+    }
     const bool background = args.contains("--background");
     const bool save = args.contains("--save");
 

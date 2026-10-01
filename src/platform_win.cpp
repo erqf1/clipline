@@ -2,12 +2,16 @@
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QKeySequence>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QUuid>
 #include "platform.h"
+extern "C" {
+#include "rnnoise.h"
+}
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -20,6 +24,7 @@
 #include <propsys.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <thread>
@@ -179,11 +184,11 @@ UINT vkFor(int key) {
 
 class HotkeyFilter : public QAbstractNativeEventFilter {
 public:
-    std::function<void(int)> onHotkey;
+    std::function<bool(int)> onHotkey;  // true = war unser Hotkey
     bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
         MSG* msg = static_cast<MSG*>(message);
-        if (msg->message == WM_HOTKEY && onHotkey) { onHotkey(int(msg->wParam)); return true; }
-        return false;
+        // Nur die eigene Hotkey-ID schlucken - sonst bekäme ein zweiter Hotkey (Mikro stumm) nie etwas ab
+        return msg->message == WM_HOTKEY && onHotkey && onHotkey(int(msg->wParam));
     }
 };
 }  // namespace
@@ -197,7 +202,11 @@ struct GlobalHotkey::Impl {
 GlobalHotkey::GlobalHotkey(QObject* parent) : QObject(parent), d(new Impl) {
     static int counter = 0x4C50;
     d->id = ++counter;
-    d->filter.onHotkey = [this](int id) { if (id == d->id) emit activated(); };
+    d->filter.onHotkey = [this](int id) {
+        if (id != d->id) return false;
+        emit activated();
+        return true;
+    };
     QCoreApplication::instance()->installNativeEventFilter(&d->filter);
 }
 
@@ -369,36 +378,103 @@ struct Capture {
     }
 };
 
-float rmsDb(const float* s, size_t frames) {
-    if (!frames) return -90.f;
+float rmsDb(const float* s, size_t n) {
+    if (!n) return -90.f;
     double sum = 0;
-    for (size_t i = 0; i < frames * 2; ++i) sum += double(s[i]) * s[i];
-    const double rms = std::sqrt(sum / double(frames * 2));
-    return float(std::max(-90.0, 20.0 * std::log10(rms + 1e-9)));
+    for (size_t i = 0; i < n; ++i) sum += double(s[i]) * s[i];
+    return float(std::max(-90.0, 20.0 * std::log10(std::sqrt(sum / double(n)) + 1e-9)));
 }
 
-// Rauschsperre fürs Mikrofon: unter der Schwelle wird weich stummgeschaltet (mit kurzer Haltezeit,
-// damit Wortenden nicht abgeschnitten werden)
-struct NoiseGate {
-    float thresholdDb = -45.f, volume = 1.f, gain = 0.f;
-    int hold = 0;
-    std::atomic<float>* level = nullptr;
-    void process(float* s, size_t frames) {
-        const bool off = thresholdDb <= -80.f;
-        const float attack = 1.f - std::exp(-1.f / (0.005f * kRate)), rel = 1.f - std::exp(-1.f / (0.08f * kRate));
-        for (size_t o = 0; o < frames; o += 480) {  // 10-ms-Blöcke
-            const size_t n = std::min<size_t>(480, frames - o);
-            const float db = rmsDb(s + o * 2, n);
-            if (level) level->store(db);
-            if (off || db > thresholdDb) hold = kRate / 4;
-            const float target = hold > 0 ? 1.f : 0.f;
-            hold -= int(n);
-            for (size_t i = 0; i < n; ++i) {
-                gain += (target - gain) * (target > gain ? attack : rel);
-                s[(o + i) * 2] *= gain * volume;
-                s[(o + i) * 2 + 1] *= gain * volume;
-            }
+constexpr size_t kBlock = 480;  // 10 ms bei 48 kHz - genau die Blockgröße von RNNoise
+
+// Mikrofon-Kette: Mono -> RNNoise (Rauschen weg, erkennt Sprache) -> Klick-Dämpfer -> Sperre -> Lautstärke -> Stereo.
+// 10 ms Vorschau (ein Block Verzögerung), damit kurze Klicks von Wortanfängen unterschieden werden können.
+struct MicChain {
+    static constexpr size_t kSubLen = 96, kSub = kBlock / kSubLen;  // 2-ms-Stücke für die Klick-Erkennung
+    DenoiseState* rnn = rnnoise_create();
+    std::vector<float> pending;   // Mono-Samples, die noch keinen ganzen Block ergeben
+    float prev[kBlock] = {};      // vorheriger Block (wird mit dem aktuellen als Vorschau ausgegeben)
+    float prevVad = 0.f;
+    bool havePrev = false;
+    float hist[3 * kSub] = {};    // Energien: vorvoriger, voriger, aktueller Block
+    float clickGain = 1.f;
+    float gain = 0.f;             // Sperre: aktuelle Öffnung 0..1 (weich geregelt)
+    int hold = 0, voiceHold = 0;  // Haltezeiten, damit Wortenden bleiben
+    float levelDb = -90.f;        // Pegel nach der Unterdrückung (für die Anzeige)
+
+    MicChain() = default;
+    MicChain(const MicChain&) = delete;
+    ~MicChain() { rnnoise_destroy(rnn); }
+
+    static void energies(const float* s, float* e) {
+        for (size_t j = 0; j < kSub; ++j) {
+            double sum = 0;
+            for (size_t k = 0; k < kSubLen; ++k) sum += double(s[j * kSubLen + k]) * s[j * kSubLen + k];
+            e[j] = float(sum / kSubLen) + 1e-12f;
         }
+    }
+
+    // Tastatur/Maus: kurze Spitzen, deutlich lauter als die 20 ms drumherum -> auf deren Pegel herunterregeln.
+    // Sprache ist über 20 ms gleichmäßiger, Wortanfänge bleiben laut -> der Median steigt mit, nichts wird gedämpft.
+    void declick(float* s) {
+        for (size_t j = 0; j < kSub; ++j) {
+            float win[2 * kSub + 1];
+            std::copy(hist + j, hist + j + 2 * kSub + 1, win);  // ±10 ms um das Stück
+            std::nth_element(win, win + kSub, win + 2 * kSub + 1);
+            const float med = win[kSub], e = hist[kSub + j];
+            const float target = e > med * 5.f ? std::sqrt(med * 2.f / e) : 1.f;
+            for (size_t k = 0; k < kSubLen; ++k) {
+                const float g = k < 16 ? clickGain + (target - clickGain) * float(k + 1) / 16.f : target;
+                s[j * kSubLen + k] *= g;
+            }
+            clickGain = target;
+        }
+    }
+
+    // in: Stereo 48 kHz; hängt das Ergebnis als Stereo an out an
+    void process(const std::vector<float>& in, std::vector<float>& out, const MicTuning& t) {
+        for (size_t i = 0; i + 1 < in.size(); i += 2) pending.push_back(0.5f * (in[i] + in[i + 1]));
+        const size_t blocks = pending.size() / kBlock;
+        const float attack = 1.f - std::exp(-1.f / (0.005f * kRate)), release = 1.f - std::exp(-1.f / (0.08f * kRate));
+        const float vol = t.muted ? 0.f : std::clamp(t.micVolume, 0, 200) / 100.f;
+        const bool gateOff = t.gateDb <= -80;
+        float frame[kBlock];
+        for (size_t b = 0; b < blocks; ++b) {
+            float* s = pending.data() + b * kBlock;
+            float vad = 1.f;
+            if (t.denoise) {
+                // RNNoise rechnet im 16-Bit-Wertebereich und liefert nebenbei die Sprach-Wahrscheinlichkeit
+                for (size_t k = 0; k < kBlock; ++k) frame[k] = s[k] * 32768.f;
+                vad = rnnoise_process_frame(rnn, frame, frame);
+                for (size_t k = 0; k < kBlock; ++k) s[k] = frame[k] / 32768.f;
+            }
+            std::copy(hist + kSub, hist + 3 * kSub, hist);
+            energies(s, hist + 2 * kSub);
+            if (!havePrev) {  // erster Block: nur merken (Vorschau fehlt noch)
+                std::copy(s, s + kBlock, prev);
+                prevVad = vad;
+                havePrev = true;
+                continue;
+            }
+            if (t.denoise) declick(prev);
+            levelDb = rmsDb(prev, kBlock);
+            // Sperre offen, solange gesprochen wird (RNNoise) und es lauter als die Schwelle ist
+            if (prevVad > 0.5f) voiceHold = kRate * 3 / 10;
+            const bool voice = !t.denoise || voiceHold > 0;
+            if (voice && (gateOff || levelDb > float(t.gateDb))) hold = kRate / 4;
+            const float target = hold > 0 ? 1.f : 0.f;
+            hold -= int(kBlock);
+            voiceHold -= int(kBlock);
+            for (size_t k = 0; k < kBlock; ++k) {
+                gain += (target - gain) * (target > gain ? attack : release);
+                const float v = prev[k] * gain * vol;
+                out.push_back(v);
+                out.push_back(v);
+            }
+            std::copy(s, s + kBlock, prev);
+            prevVad = vad;
+        }
+        pending.erase(pending.begin(), pending.begin() + blocks * kBlock);
     }
 };
 
@@ -414,13 +490,32 @@ struct SystemAudioPipe::Impl {
     HANDLE pipe = INVALID_HANDLE_VALUE;
     bool system = false;
     QString mic;
-    MicTuning tuning;
+    // Live änderbar (Einstellungen, Mute-Hotkey) - der Mischer liest sie in jeder Runde
+    std::atomic<int> gateDb{-45}, micVolume{100}, systemVolume{100};
+    std::atomic<bool> denoise{true}, muted{false};
+    MicTuning tuning() const {
+        MicTuning t;
+        t.gateDb = gateDb;
+        t.micVolume = micVolume;
+        t.systemVolume = systemVolume;
+        t.denoise = denoise;
+        t.muted = muted;
+        return t;
+    }
 };
 
 SystemAudioPipe::SystemAudioPipe() : d(new Impl) {}
 SystemAudioPipe::~SystemAudioPipe() { stop(); }
 
 QString SystemAudioPipe::pipePath() const { return d->name; }
+
+void SystemAudioPipe::setTuning(const MicTuning& t) {
+    d->gateDb = t.gateDb;
+    d->micVolume = t.micVolume;
+    d->systemVolume = t.systemVolume;
+    d->denoise = t.denoise;
+    d->muted = t.muted;
+}
 
 bool SystemAudioPipe::prepare(bool systemSound, const QString& mic, const MicTuning& tuning) {
     const bool comInit = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
@@ -443,7 +538,7 @@ bool SystemAudioPipe::prepare(bool systemSound, const QString& mic, const MicTun
     if (comInit) CoUninitialize();
     d->system = haveSys;
     d->mic = haveMic ? mic : QString();
-    d->tuning = tuning;
+    setTuning(tuning);
     if (!haveSys && !haveMic) return false;
     d->name = QString("\\\\.\\pipe\\clipline_audio_%1").arg(QUuid::createUuid().toString(QUuid::Id128));
     return true;
@@ -477,9 +572,7 @@ void SystemAudioPipe::start() {
                 release(dev);
             }
         }
-        NoiseGate gate;
-        gate.thresholdDb = float(s->tuning.gateDb);
-        gate.volume = float(std::clamp(s->tuning.volume, 0, 400)) / 100.f;
+        MicChain chain;
 
         // Ausgabe im Takt der Uhr, ~60 ms hinter der Echtzeit: so reicht der Puffer für beide Quellen,
         // fehlende Daten werden zu Stille (Loopback liefert nichts, solange nichts abgespielt wird)
@@ -490,12 +583,12 @@ void SystemAudioPipe::start() {
         QueryPerformanceCounter(&t0);
         long long written = 0;
         while (!s->stop) {
+            const MicTuning t = s->tuning();
             if (haveSys) sys.read(sysBuf);
             if (haveMic) {
                 micNew.clear();
                 mic.read(micNew);
-                gate.process(micNew.data(), micNew.size() / 2);
-                micBuf.insert(micBuf.end(), micNew.begin(), micNew.end());
+                chain.process(micNew, micBuf, t);
             }
             // Uhren der Geräte laufen minimal auseinander: zu viel Gepuffertes verwerfen
             if (static_cast<long long>(sysBuf.size() / 2) > maxBuffered) dropFront(sysBuf, sysBuf.size() / 2 - delay);
@@ -505,8 +598,9 @@ void SystemAudioPipe::start() {
             const long long due = (now.QuadPart - t0.QuadPart) * kRate / freq.QuadPart - delay - written;
             if (due > 0) {
                 out.assign(size_t(due) * 2, 0.f);
+                const float sysVol = std::clamp(t.systemVolume, 0, 200) / 100.f;
                 const size_t ns = std::min(out.size(), sysBuf.size()), nm = std::min(out.size(), micBuf.size());
-                for (size_t i = 0; i < ns; ++i) out[i] += sysBuf[i];
+                for (size_t i = 0; i < ns; ++i) out[i] += sysBuf[i] * sysVol;
                 for (size_t i = 0; i < nm; ++i) out[i] += micBuf[i];
                 for (float& v : out) v = std::clamp(v, -1.f, 1.f);
                 sysBuf.erase(sysBuf.begin(), sysBuf.begin() + ns);
@@ -542,12 +636,14 @@ void SystemAudioPipe::stop() {
 // ---------------------------------------------------------------- Mikrofon-Pegel (Einstellungen)
 struct MicLevelMeter::Impl {
     std::thread thread;
-    std::atomic<bool> stop{false};
+    std::atomic<bool> stop{false}, denoise{true};
     std::atomic<float> level{-90.f};
 };
 
 MicLevelMeter::MicLevelMeter() : d(new Impl) {}
 MicLevelMeter::~MicLevelMeter() { stop(); }
+
+void MicLevelMeter::setDenoise(bool on) { d->denoise = on; }
 
 bool MicLevelMeter::start(const QString& micName) {
     stop();
@@ -566,13 +662,20 @@ bool MicLevelMeter::start(const QString& micName) {
             if (dev) ok = mic.open(dev, false);
             release(dev);
         }
-        std::vector<float> buf;
+        // Gleiche Kette wie bei der Aufnahme (ohne Sperre), damit die Anzeige zeigt, was wirklich ankommt
+        MicChain chain;
+        MicTuning t;
+        t.gateDb = -80;
+        std::vector<float> in, out;
         while (ok && !s->stop) {
-            buf.clear();
-            mic.read(buf);
-            if (buf.size() >= 2) {
+            in.clear();
+            out.clear();
+            mic.read(in);
+            t.denoise = s->denoise;
+            chain.process(in, out, t);
+            if (!out.empty()) {
                 // schnell hoch, langsam runter - wie eine Pegelanzeige im Mischpult
-                const float db = rmsDb(buf.data(), buf.size() / 2), cur = s->level;
+                const float db = chain.levelDb, cur = s->level;
                 s->level = db > cur ? db : cur + (db - cur) * 0.25f;
             }
             Sleep(40);
@@ -591,3 +694,15 @@ void MicLevelMeter::stop() {
 
 float MicLevelMeter::levelDb() const { return d->level; }
 bool micMeterSupported() { return true; }
+
+bool processMicFile(const QString& inRaw, const QString& outRaw, const MicTuning& tuning) {
+    QFile in(inRaw), out(outRaw);
+    if (!in.open(QIODevice::ReadOnly) || !out.open(QIODevice::WriteOnly)) return false;
+    const QByteArray data = in.readAll();
+    std::vector<float> src(size_t(data.size()) / sizeof(float)), dst;
+    memcpy(src.data(), data.constData(), src.size() * sizeof(float));
+    MicChain chain;
+    chain.process(src, dst, tuning);
+    out.write(reinterpret_cast<const char*>(dst.data()), qint64(dst.size() * sizeof(float)));
+    return true;
+}
