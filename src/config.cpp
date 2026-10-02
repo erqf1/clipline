@@ -71,12 +71,14 @@ QSize captureSize(const Config& c, QSize native) {
     return QSize(w, c.height / 2 * 2);
 }
 
-// Bits pro Pixel und Bild: genug für scharfe Spielszenen mit H.264, ohne Speicher zu verschwenden
+// Bits pro Pixel und Bild: genug für scharfe Spielszenen mit H.264, ohne Speicher zu verschwenden.
+// 1080p60: ~10 / ~19 / ~31 Mbit/s. Vorher 0,045/0,07/0,11 (1080p60 "ausgewogen" nur 8,7 Mbit/s) - bei schnellen
+// Spielszenen sichtbar blockig (Messung: SSIM 0,947 statt 0,975).
 double videoBitrate(const Config& c, QSize native) {
-    static const double bpp[3] = {0.045, 0.07, 0.11};
+    static const double bpp[3] = {0.08, 0.15, 0.25};
     const QSize s = captureSize(c, native);
     const double b = double(s.width()) * s.height() * c.fps * bpp[std::clamp(c.quality, 0, 2)];
-    return std::clamp(b, 1.5e6, 80e6);
+    return std::clamp(b, 3e6, 100e6);
 }
 
 double estimateBufferMB(const Config& c, QSize native) {

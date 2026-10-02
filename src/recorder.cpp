@@ -289,18 +289,19 @@ QStringList Recorder::buildArgs(bool withAudio) {
     const QString b = QString::number(br), maxr = QString::number(br * 3 / 2), buf = QString::number(br * 2);
     const QString gop = fps;  // ein Keyframe pro Sekunde -> Clips starten genau
     if (encoder_ == "h264_nvenc")
-        a << "-c:v" << encoder_ << "-preset" << "p2" << "-tune" << "ll" << "-rc" << "vbr" << "-b:v" << b << "-maxrate" << maxr
+        a << "-c:v" << encoder_ << "-preset" << "p4" << "-tune" << "ll" << "-rc" << "vbr" << "-b:v" << b << "-maxrate" << maxr
           << "-bufsize" << buf;
     else if (encoder_ == "h264_amf")
-        // "transcoding": nur so hält AMF das Keyframe-Intervall ein (lowlatency setzt nur einen einzigen IDR)
-        a << "-c:v" << encoder_ << "-usage" << "transcoding" << "-quality" << "speed" << "-rc" << "vbr_peak" << "-b:v" << b
+        // "transcoding": nur so hält AMF das Keyframe-Intervall ein (lowlatency setzt nur einen einzigen IDR).
+        // "balanced" statt "speed": deutlich weniger Blockbildung, für den Hardware-Encoder kaum Mehrlast
+        a << "-c:v" << encoder_ << "-usage" << "transcoding" << "-quality" << "balanced" << "-rc" << "vbr_peak" << "-b:v" << b
           << "-maxrate" << maxr << "-bufsize" << buf;
     else if (encoder_ == "h264_qsv")
-        a << "-c:v" << encoder_ << "-preset" << "veryfast" << "-b:v" << b << "-maxrate" << maxr << "-bufsize" << buf;
+        a << "-c:v" << encoder_ << "-preset" << "faster" << "-b:v" << b << "-maxrate" << maxr << "-bufsize" << buf;
     else if (encoder_ == "h264_videotoolbox")
         a << "-c:v" << encoder_ << "-realtime" << "1" << "-b:v" << b << "-maxrate" << maxr << "-bufsize" << buf;
     else
-        a << "-c:v" << "libx264" << "-preset" << "ultrafast" << "-tune" << "zerolatency" << "-b:v" << b << "-maxrate"
+        a << "-c:v" << "libx264" << "-preset" << "superfast" << "-tune" << "zerolatency" << "-b:v" << b << "-maxrate"
           << maxr << "-bufsize" << buf;
     // Keyframe jede Sekunde und SPS/PPS vor jedem Paket -> jeder Ausschnitt aus dem Puffer ist abspielbar.
     // Nicht nur "freq=keyframe": AMF markiert die erzwungenen Keyframes nicht immer als solche, dann fehlten
