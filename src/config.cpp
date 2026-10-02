@@ -34,6 +34,7 @@ Config Config::load() {
     c.autostart = s.value("autostart", c.autostart).toBool();
     c.sound = s.value("sound", c.sound).toBool();
     c.language = s.value("language", c.language).toString();
+    c.waylandToken = s.value("waylandToken").toString();
     c.firstRunDone = s.value("firstRunDone", false).toBool();
     return c;
 }
@@ -59,6 +60,7 @@ void Config::save() const {
     s.setValue("autostart", autostart);
     s.setValue("sound", sound);
     s.setValue("language", language);
+    s.setValue("waylandToken", waylandToken);
     s.setValue("firstRunDone", firstRunDone);
 }
 

@@ -78,7 +78,7 @@ jobs:
             echo "Section: video"
             echo "Priority: optional"
             echo "Architecture: amd64"
-            echo "Depends: libqt6widgets6, libqt6network6, libx11-6, ffmpeg"
+            echo "Depends: libqt6widgets6, libqt6network6, libqt6dbus6, libx11-6, ffmpeg, gstreamer1.0-tools, gstreamer1.0-plugins-base, gstreamer1.0-pipewire"
             echo "Maintainer: Clipline <noreply@users.noreply.github.com>"
             echo "Description: Save the last moments of your screen with one key"
             echo " Records quietly in the background and keeps the last minutes in memory."

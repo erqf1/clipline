@@ -8,6 +8,8 @@
 #include "config.h"
 #include "platform.h"
 
+class WaylandCapture;
+
 // Nimmt dauerhaft per ffmpeg auf und hält die letzten Sekunden als MPEG-TS im Arbeitsspeicher.
 // Beim Speichern wird der Pufferausschnitt ohne Neukodierung in eine MP4 umgepackt.
 class Recorder : public QObject {
@@ -34,6 +36,7 @@ signals:
     void stateChanged();
     void clipSaved(const QString& path, bool ok, const QString& error);
     void warning(const QString& text);
+    void waylandTokenChanged(const QString& token);  // Linux/Wayland: gemerkte Bildschirmfreigabe
 
 private:
     struct Chunk {
@@ -47,11 +50,16 @@ private:
     void onFinished();
     bool captureChanged(const Config& a, const Config& b) const;
     MicTuning tuning() const;
+    bool startWayland();  // false = Portal-Dialog läuft noch / nicht möglich
     void applyTuning();
 
     Config cfg_;
     QString encoder_;
     QProcess* proc_ = nullptr;
+    QProcess* gst_ = nullptr;          // Linux/Wayland: GStreamer liefert die Bilder an ffmpeg
+    WaylandCapture* wayland_ = nullptr;
+    QSize waylandOut_;                 // Bildgröße, die GStreamer liefert
+    void stopGst();
     std::unique_ptr<SystemAudioPipe> sysAudio_;
     std::deque<Chunk> chunks_;
     qint64 total_ = 0;

@@ -6,7 +6,7 @@ pkgdesc="Save the last moments of your screen with one key"
 arch=('x86_64')
 url="https://github.com/erqf1/clipline"
 license=('Apache-2.0')
-depends=('qt6-base' 'ffmpeg' 'libx11')
+depends=('qt6-base' 'ffmpeg' 'libx11' 'gstreamer' 'gst-plugins-base' 'gst-plugin-pipewire')
 makedepends=('cmake' 'ninja')
 options=('!debug')
 # CI packt den Quellbaum als clipline-src.tar.gz

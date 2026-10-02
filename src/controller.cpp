@@ -62,6 +62,11 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     connect(&hotkey_, &GlobalHotkey::activated, this, &Controller::saveClip);
     connect(&muteHotkey_, &GlobalHotkey::activated, this, &Controller::toggleMute);
     connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);
+    // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
+    connect(&rec_, &Recorder::waylandTokenChanged, this, [this](const QString& token) {
+        cfg_.waylandToken = token;
+        if (!quiet) cfg_.save();
+    });
     connect(&rec_, &Recorder::warning, this, [this](const QString& w) {
         notify("Clipline", w, QSystemTrayIcon::Warning, 6000);
     });

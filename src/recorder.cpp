@@ -9,6 +9,10 @@
 #include <QSettings>
 #include <QTemporaryFile>
 #include "i18n.h"
+#if defined(Q_OS_LINUX)
+#include <QStandardPaths>
+#include "wayland_capture.h"
+#endif
 
 static constexpr int kTsPacket = 188;
 
@@ -105,9 +109,56 @@ void Recorder::start() {
     launch();
 }
 
+void Recorder::stopGst() {
+    if (!gst_) return;
+    gst_->disconnect(this);
+    if (gst_->state() != QProcess::NotRunning) {
+        gst_->terminate();
+        if (!gst_->waitForFinished(1000)) gst_->kill();
+        gst_->waitForFinished(1000);
+    }
+    gst_->deleteLater();
+    gst_ = nullptr;
+}
+
+// Linux/Wayland: erst die Bildschirmfreigabe übers Portal (beim ersten Mal mit Dialog), dann GStreamer.
+// false = noch nicht so weit (Dialog offen) oder nicht möglich - launch() kommt danach von selbst wieder.
+bool Recorder::startWayland() {
+#if defined(Q_OS_LINUX)
+    if (!WaylandCapture::gstreamerAvailable()) {
+        emit warning(L("Recording under Wayland needs GStreamer with the PipeWire plugin. Install it, e.g. "
+                       "\"sudo pacman -S gst-plugin-pipewire gst-plugins-base\" or \"sudo apt install "
+                       "gstreamer1.0-pipewire gstreamer1.0-tools\", then restart Clipline."));
+        return false;
+    }
+    if (!wayland_) {
+        wayland_ = new WaylandCapture(this);
+        connect(wayland_, &WaylandCapture::done, this, [this](bool ok, const QString& err) {
+            if (!ok) {
+                emit warning(L("Clipline can't record the screen:") + " " + err);
+                retry_.start(10 * 60 * 1000);  // nicht ständig nachfragen
+                return;
+            }
+            if (wayland_->restoreToken() != cfg_.waylandToken) {
+                cfg_.waylandToken = wayland_->restoreToken();
+                emit waylandTokenChanged(cfg_.waylandToken);
+            }
+            fails_ = 0;
+            launch();
+        });
+    }
+    if (wayland_->isOpen()) return true;
+    if (!wayland_->busy()) wayland_->open(cfg_.waylandToken);
+    return false;
+#else
+    return true;
+#endif
+}
+
 void Recorder::stop() {
     wanted_ = false;
     retry_.stop();
+    stopGst();
     if (proc_) {
         proc_->disconnect(this);
         if (proc_->state() != QProcess::NotRunning) {
@@ -133,8 +184,9 @@ double Recorder::bufferedSeconds() const {
 
 QStringList Recorder::buildArgs(bool withAudio) {
     const Monitor mon = findMonitor(cfg_.monitor);
-    const QSize native = mon.rect.isEmpty() ? QSize(1920, 1080) : mon.rect.size();
-    const QSize out = captureSize(cfg_, native);
+    QSize native = mon.rect.isEmpty() ? QSize(1920, 1080) : mon.rect.size();
+    QSize out = captureSize(cfg_, native);
+    bool inputScaled = false;  // Wayland: GStreamer liefert schon die Zielgröße
     const QString fps = QString::number(cfg_.fps);
     // stdin bleibt offen, damit "q" ffmpeg sauber beendet
     QStringList a = {"-hide_banner", "-loglevel", "error"};
@@ -176,10 +228,21 @@ QStringList Recorder::buildArgs(bool withAudio) {
         micInput = 0;
     }
 #else
-    const QString display = qEnvironmentVariable("DISPLAY", ":0");
-    a << "-f" << "x11grab" << "-framerate" << fps << "-draw_mouse" << "1" << "-video_size"
-      << QString("%1x%2").arg(mon.rect.width()).arg(mon.rect.height()) << "-i"
-      << QString("%1+%2,%3").arg(display).arg(mon.rect.x()).arg(mon.rect.y());
+    if (wayland_ && wayland_->isOpen()) {
+        // Wayland: Rohbilder (NV12, schon in Zielgröße) kommen von GStreamer über stdin
+        if (!wayland_->size().isEmpty()) native = wayland_->size();
+        out = captureSize(cfg_, native);
+        waylandOut_ = out;
+        inputScaled = true;
+        a << "-thread_queue_size" << "64" << "-f" << "rawvideo" << "-pix_fmt" << "nv12" << "-video_size"
+          << QString("%1x%2").arg(out.width()).arg(out.height()) << "-framerate" << fps
+          << "-use_wallclock_as_timestamps" << "1" << "-i" << "pipe:0";
+    } else {
+        const QString display = qEnvironmentVariable("DISPLAY", ":0");
+        a << "-f" << "x11grab" << "-framerate" << fps << "-draw_mouse" << "1" << "-video_size"
+          << QString("%1x%2").arg(mon.rect.width()).arg(mon.rect.height()) << "-i"
+          << QString("%1+%2,%3").arg(display).arg(mon.rect.x()).arg(mon.rect.y());
+    }
     if (withAudio && cfg_.systemAudio) {
         a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-i" << "@DEFAULT_MONITOR@";
         ++audioInputs;
@@ -192,7 +255,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
 
     // Video: skalieren + Pixelformat für den Encoder
     QString vf = vpre;
-    if (out != native) vf += QString("scale=%1:%2:flags=bicubic,").arg(out.width()).arg(out.height());
+    if (out != native && !inputScaled) vf += QString("scale=%1:%2:flags=bicubic,").arg(out.width()).arg(out.height());
     vf += encoder_ == "libx264" ? "format=yuv420p" : "format=nv12";
     QStringList fc = {QString("[0:v]%1[v]").arg(vf)};
     // macOS/Linux: Mikrofon (Rauschunterdrückung, Sperre, Lautstärke, stumm) und Systemton-Lautstärke als
@@ -252,6 +315,10 @@ QStringList Recorder::buildArgs(bool withAudio) {
 
 void Recorder::launch() {
     if (!wanted_) return;
+#if defined(Q_OS_LINUX)
+    if (WaylandCapture::isWaylandSession() && !startWayland()) return;
+#endif
+    stopGst();
     if (proc_) {
         proc_->disconnect(this);
         proc_->kill();
@@ -278,9 +345,22 @@ void Recorder::launch() {
     connect(proc_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError e) {
         if (e == QProcess::FailedToStart) onFinished();
     });
+#if defined(Q_OS_LINUX)
+    if (wayland_ && wayland_->isOpen()) {
+        gst_ = new QProcess(this);
+        gst_->setStandardOutputProcess(proc_);  // GStreamer-stdout -> ffmpeg-stdin
+        connect(gst_, &QProcess::readyReadStandardError, this, [this] {
+            errTail_ += gst_->readAllStandardError();
+            if (errTail_.size() > 4000) errTail_ = errTail_.right(4000);
+        });
+    }
+#endif
     if (sysAudio_) sysAudio_->start();
     runTime_.start();
     proc_->start(ffmpegPath(), args);
+#if defined(Q_OS_LINUX)
+    if (gst_) gst_->start(QStandardPaths::findExecutable("gst-launch-1.0"), wayland_->gstArgs(waylandOut_, cfg_.fps));
+#endif
     emit stateChanged();
 }
 
@@ -309,12 +389,17 @@ void Recorder::onFinished() {
     const QString err = QString::fromUtf8(errTail_).trimmed();
     proc_->deleteLater();
     proc_ = nullptr;
+    stopGst();
     if (sysAudio_) sysAudio_->stop();
     sysAudio_.reset();
     gotData_ = false;
     emit stateChanged();
     if (!wanted_) return;
     fails_ = quick ? fails_ + 1 : 1;
+#if defined(Q_OS_LINUX)
+    // Freigabe widerrufen / PipeWire-Strom weg: beim nächsten Versuch eine neue Sitzung holen
+    if (quick && fails_ >= 2 && wayland_) wayland_->close();
+#endif
     // Häufigste Ursache für sofortiges Scheitern: Audiogerät. Dann ohne Ton weiter.
     if (quick && fails_ >= 2 && audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
         audioOk_ = false;

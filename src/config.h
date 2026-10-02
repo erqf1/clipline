@@ -23,6 +23,7 @@ struct Config {
     bool autostart = true;
     bool sound = true;
     QString language;         // "", "en", "de"
+    QString waylandToken;     // Linux/Wayland: gemerkte Bildschirmfreigabe (kein Portal-Dialog bei jedem Start)
     bool firstRunDone = false;
 
     static Config load();
