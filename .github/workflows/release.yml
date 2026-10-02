@@ -103,7 +103,7 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Dependencies
-        run: pacman -Syu --noconfirm base-devel git cmake ninja qt6-base libx11 ffmpeg
+        run: pacman -Syu --noconfirm base-devel git cmake ninja qt6-base libx11 ffmpeg gstreamer gst-plugins-base gst-plugin-pipewire
       - uses: actions/checkout@v4
       - name: makepkg
         shell: bash
