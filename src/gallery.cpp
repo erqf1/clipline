@@ -27,6 +27,17 @@
 static constexpr int kPathRole = Qt::UserRole + 1;
 static constexpr int kSizeRole = Qt::UserRole + 2;
 static constexpr int kTimeRole = Qt::UserRole + 3;
+static constexpr int kOpenedRole = Qt::UserRole + 4;
+
+// Geöffnete Clips: eigene kleine Datei statt Registry, im Clip-Ordner landet nichts
+static QString openedFile() {
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    QDir().mkpath(dir);
+    return dir + "/opened.ini";
+}
+static QString openedKey(const QString& path) {
+    return QCryptographicHash::hash(QDir::cleanPath(path).toLower().toUtf8(), QCryptographicHash::Sha1).toHex().left(20);
+}
 
 // ---------------------------------------------------------------- ThumbCache
 ThumbCache::ThumbCache(QObject* parent) : QObject(parent) {
@@ -137,6 +148,26 @@ public:
             p->drawRoundedRect(b, 9, 9);
             p->setPen(Qt::white);
             p->drawText(b, Qt::AlignCenter, t);
+        }
+        if (idx.data(kOpenedRole).toBool()) {  // schon geöffnet: Schild oben links mit Haken
+            QFont f = opt.font;
+            f.setPixelSize(11);
+            f.setBold(true);
+            p->setFont(f);
+            const QString t = L("Opened");
+            const QRectF b(thumb.left() + 8, thumb.top() + 8, QFontMetricsF(f).horizontalAdvance(t) + 34, 21);
+            p->setPen(Qt::NoPen);
+            p->setBrush(QColor(0, 0, 0, 175));
+            p->drawRoundedRect(b, 10.5, 10.5);
+            QPainterPath check;
+            check.moveTo(b.left() + 9, b.center().y() + 0.5);
+            check.lineTo(b.left() + 12.5, b.center().y() + 4);
+            check.lineTo(b.left() + 19, b.center().y() - 3.5);
+            p->setPen(QPen(pal.accent.lighter(130), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p->setBrush(Qt::NoBrush);
+            p->drawPath(check);
+            p->setPen(Qt::white);
+            p->drawText(b.adjusted(24, 0, -8, 0), Qt::AlignLeft | Qt::AlignVCenter, t);
         }
         QFont f = opt.font;
         f.setPixelSize(13);
@@ -253,8 +284,25 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     statusTimer_.setInterval(1000);
     connect(&statusTimer_, &QTimer::timeout, this, &GalleryWindow::updateStatus);
     statusTimer_.start();
+    QSettings ini(openedFile(), QSettings::IniFormat);
+    for (const QString& k : ini.childKeys()) opened_.insert(k);
     reload();
     updateStatus();
+}
+
+void GalleryWindow::setOpened(const QString& path, bool opened) {
+    const QString k = openedKey(path);
+    if (opened_.contains(k) == opened) return;
+    QSettings ini(openedFile(), QSettings::IniFormat);
+    if (opened) {
+        opened_.insert(k);
+        ini.setValue(k, QDateTime::currentDateTime().toString(Qt::ISODate));
+    } else {
+        opened_.remove(k);
+        ini.remove(k);
+    }
+    for (int r = 0; r < model_.rowCount(); ++r)
+        if (QStandardItem* it = model_.item(r); it->data(kPathRole).toString() == path) it->setData(opened, kOpenedRole);
 }
 
 void GalleryWindow::reload() {
@@ -272,6 +320,7 @@ void GalleryWindow::reload() {
         it->setData(fi.absoluteFilePath(), kPathRole);
         it->setData(fi.size(), kSizeRole);
         it->setData(fi.lastModified(), kTimeRole);
+        it->setData(opened_.contains(openedKey(fi.absoluteFilePath())), kOpenedRole);
         it->setToolTip(fi.fileName());
         it->setEditable(false);
         model_.appendRow(it);
@@ -313,7 +362,7 @@ QString GalleryWindow::selected() const {
 
 void GalleryWindow::openClip(const QString& path) {
     if (path.isEmpty()) return;
-    QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    if (QDesktopServices::openUrl(QUrl::fromLocalFile(path))) setOpened(path, true);
 }
 
 void GalleryWindow::contextMenu(const QPoint& pos) {
@@ -323,23 +372,29 @@ void GalleryWindow::contextMenu(const QPoint& pos) {
     const QString path = idx.data(kPathRole).toString();
     const Palette pal = makePalette(ctl_->config().accent, ctl_->config().dark);
     QMenu m(this);
-    m.addAction(icon(Ic::Play, pal.text), L("Play"), this, [path] { QDesktopServices::openUrl(QUrl::fromLocalFile(path)); });
+    m.addAction(icon(Ic::Play, pal.text), L("Play"), this, [this, path] { openClip(path); });
     m.addAction(icon(Ic::Reveal, pal.text), L("Show in folder"), this, [path] { revealInFolder(path); });
+    if (idx.data(kOpenedRole).toBool())
+        m.addAction(L("Mark as new"), this, [this, path] { setOpened(path, false); });
     m.addSeparator();
     m.addAction(icon(Ic::Rename, pal.text), L("Rename…"), this, [this, path] {
         QFileInfo fi(path);
         bool ok = false;
         const QString n = QInputDialog::getText(this, L("Rename clip"), L("New name:"), QLineEdit::Normal,
                                                 fi.completeBaseName(), &ok).trimmed();
-        if (ok && !n.isEmpty() && n != fi.completeBaseName()) {
-            QFile::rename(path, fi.dir().filePath(n + "." + fi.suffix()));
+        const QString target = fi.dir().filePath(n + "." + fi.suffix());
+        if (ok && !n.isEmpty() && n != fi.completeBaseName() && QFile::rename(path, target)) {
+            if (opened_.contains(openedKey(path))) {  // Schild wandert mit
+                setOpened(path, false);
+                setOpened(target, true);
+            }
             reload();
         }
     });
     m.addAction(icon(Ic::Trash, pal.text), L("Move to trash"), this, [this, path] {
         if (QMessageBox::question(this, "Clipline", L("Move \"%1\" to the trash?").arg(QFileInfo(path).fileName())) ==
             QMessageBox::Yes) {
-            QFile::moveToTrash(path);
+            if (QFile::moveToTrash(path)) setOpened(path, false);
             reload();
         }
     });

@@ -5,6 +5,7 @@
 #include <QListView>
 #include <QProcess>
 #include <QPushButton>
+#include <QSet>
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QWidget>
@@ -42,6 +43,7 @@ public:
     explicit GalleryWindow(Controller* ctl);
     void reload();
     void updateStatus();
+    void setOpened(const QString& path, bool opened);  // "Geöffnet"-Schild auf der Kachel (wird gespeichert)
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -52,6 +54,7 @@ private:
     QString selected() const;
 
     Controller* ctl_;
+    QSet<QString> opened_;  // Schlüssel geöffneter Clips (siehe openedKey)
     QStandardItemModel model_;
     QListView* view_;
     ThumbCache thumbs_;
