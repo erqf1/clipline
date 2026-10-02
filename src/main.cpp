@@ -152,14 +152,14 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     GalleryWindow* g = ctl.gallery();
     g->setAttribute(Qt::WA_DontShowOnScreen);
     g->resize(1060, 700);
-    // Erster Clip als geöffnet markiert (Schild auf der Kachel), danach wieder zurück
-    const QFileInfoList clips = QDir(cfg.clipsDir).entryInfoList({"*.mp4"}, QDir::Files, QDir::Time);
-    if (!clips.isEmpty()) g->setOpened(clips.first().absoluteFilePath(), true);
     QElapsedTimer w;
     w.start();
+    while (w.elapsed() < 3600) QApplication::processEvents(QEventLoop::AllEvents, 50);
+    // Ladekreis beim Öffnen (ohne wirklich einen Player zu starten)
+    const QFileInfoList clips = QDir(cfg.clipsDir).entryInfoList({"*.mp4"}, QDir::Files, QDir::Time);
+    if (!clips.isEmpty()) g->showOpening(clips.first().absoluteFilePath());
     while (w.elapsed() < 4000) QApplication::processEvents(QEventLoop::AllEvents, 50);
     g->grab().save(dir + "/gallery.png");
-    if (!clips.isEmpty()) g->setOpened(clips.first().absoluteFilePath(), false);
     say("gallery saved");
     ctl.quit();
     say("quit done");

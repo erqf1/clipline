@@ -1,6 +1,7 @@
 #include "gallery.h"
 
 #include <QCloseEvent>
+#include <algorithm>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -27,17 +28,6 @@
 static constexpr int kPathRole = Qt::UserRole + 1;
 static constexpr int kSizeRole = Qt::UserRole + 2;
 static constexpr int kTimeRole = Qt::UserRole + 3;
-static constexpr int kOpenedRole = Qt::UserRole + 4;
-
-// Geöffnete Clips: eigene kleine Datei statt Registry, im Clip-Ordner landet nichts
-static QString openedFile() {
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    QDir().mkpath(dir);
-    return dir + "/opened.ini";
-}
-static QString openedKey(const QString& path) {
-    return QCryptographicHash::hash(QDir::cleanPath(path).toLower().toUtf8(), QCryptographicHash::Sha1).toHex().left(20);
-}
 
 // ---------------------------------------------------------------- ThumbCache
 ThumbCache::ThumbCache(QObject* parent) : QObject(parent) {
@@ -97,7 +87,8 @@ void ThumbCache::next() {
 namespace {
 class TileDelegate : public QStyledItemDelegate {
 public:
-    TileDelegate(ThumbCache* t, const Palette& pal, QObject* parent) : QStyledItemDelegate(parent), thumbs_(t), pal_(pal) {}
+    TileDelegate(ThumbCache* t, const Palette& pal, const OpeningHint* opening, QObject* parent)
+        : QStyledItemDelegate(parent), thumbs_(t), pal_(pal), opening_(opening) {}
     QSize sizeHint(const QStyleOptionViewItem&, const QModelIndex&) const override { return QSize(276, 222); }
 
     void paint(QPainter* p, const QStyleOptionViewItem& opt, const QModelIndex& idx) const override {
@@ -123,7 +114,8 @@ public:
             p->drawPixmap(QRectF(thumb.center().x() - s.width() / 2, thumb.center().y() - s.height() / 2, s.width(), s.height()),
                           info.pix, QRectF(info.pix.rect()));
         }
-        if (hov) {  // Abspiel-Symbol beim Überfahren
+        const bool opening = opening_->active() && opening_->path == path;
+        if (hov && !opening) {  // Abspiel-Symbol beim Überfahren
             p->fillRect(thumb, QColor(0, 0, 0, 70));
             p->setPen(Qt::NoPen);
             p->setBrush(QColor(255, 255, 255, 230));
@@ -133,6 +125,25 @@ public:
             tri.moveTo(c + QPointF(-6, -10)); tri.lineTo(c + QPointF(11, 0)); tri.lineTo(c + QPointF(-6, 10)); tri.closeSubpath();
             p->setBrush(QColor("#15161c"));
             p->drawPath(tri);
+        }
+        if (opening) {  // gerade angeklickt: kurz grau mit drehendem Ladekreis
+            const qint64 ms = opening_->clock.elapsed();
+            p->setOpacity(std::clamp((OpeningHint::kMs - ms) / 250.0, 0.0, 1.0));  // am Ende sanft weg
+            p->fillRect(thumb, QColor(24, 26, 32, 205));
+            const QPointF c = thumb.center() - QPointF(0, 10);
+            const QRectF ring(c.x() - 15, c.y() - 15, 30, 30);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(QPen(QColor(255, 255, 255, 55), 3));
+            p->drawEllipse(ring);
+            p->setPen(QPen(QColor(232, 234, 240), 3, Qt::SolidLine, Qt::RoundCap));
+            p->drawArc(ring, int(-ms * 0.45 * 16) % (360 * 16), 100 * 16);  // ~450°/s im Uhrzeigersinn
+            QFont f = opt.font;
+            f.setPixelSize(12);
+            f.setWeight(QFont::DemiBold);
+            p->setFont(f);
+            p->setPen(QColor(196, 199, 208));
+            p->drawText(QRectF(thumb.left(), c.y() + 22, thumb.width(), 20), Qt::AlignCenter, L("Opening…"));
+            p->setOpacity(1.0);
         }
         p->setClipping(false);
         if (info.duration > 0) {
@@ -148,26 +159,6 @@ public:
             p->drawRoundedRect(b, 9, 9);
             p->setPen(Qt::white);
             p->drawText(b, Qt::AlignCenter, t);
-        }
-        if (idx.data(kOpenedRole).toBool()) {  // schon geöffnet: Schild oben links mit Haken
-            QFont f = opt.font;
-            f.setPixelSize(11);
-            f.setBold(true);
-            p->setFont(f);
-            const QString t = L("Opened");
-            const QRectF b(thumb.left() + 8, thumb.top() + 8, QFontMetricsF(f).horizontalAdvance(t) + 34, 21);
-            p->setPen(Qt::NoPen);
-            p->setBrush(QColor(0, 0, 0, 175));
-            p->drawRoundedRect(b, 10.5, 10.5);
-            QPainterPath check;
-            check.moveTo(b.left() + 9, b.center().y() + 0.5);
-            check.lineTo(b.left() + 12.5, b.center().y() + 4);
-            check.lineTo(b.left() + 19, b.center().y() - 3.5);
-            p->setPen(QPen(pal.accent.lighter(130), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p->setBrush(Qt::NoBrush);
-            p->drawPath(check);
-            p->setPen(Qt::white);
-            p->drawText(b.adjusted(24, 0, -8, 0), Qt::AlignLeft | Qt::AlignVCenter, t);
         }
         QFont f = opt.font;
         f.setPixelSize(13);
@@ -191,6 +182,7 @@ public:
 private:
     ThumbCache* thumbs_;
     Palette pal_;
+    const OpeningHint* opening_;
 };
 }  // namespace
 
@@ -263,7 +255,7 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     view_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     view_->setContextMenuPolicy(Qt::CustomContextMenu);
     view_->setModel(&model_);
-    view_->setItemDelegate(new TileDelegate(&thumbs_, pal, view_));
+    view_->setItemDelegate(new TileDelegate(&thumbs_, pal, &opening_, view_));
     connect(&thumbs_, &ThumbCache::ready, view_->viewport(), qOverload<>(&QWidget::update));
     // Ein Klick öffnet den Clip (Rechtsklick für weitere Aktionen)
     view_->setCursor(Qt::PointingHandCursor);
@@ -284,25 +276,18 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     statusTimer_.setInterval(1000);
     connect(&statusTimer_, &QTimer::timeout, this, &GalleryWindow::updateStatus);
     statusTimer_.start();
-    QSettings ini(openedFile(), QSettings::IniFormat);
-    for (const QString& k : ini.childKeys()) opened_.insert(k);
+    spinTimer_.setInterval(16);  // Ladekreis flüssig drehen, nur solange er zu sehen ist
+    connect(&spinTimer_, &QTimer::timeout, this, [this] {
+        if (!opening_.active()) {
+            spinTimer_.stop();
+            opening_.path.clear();
+        }
+        view_->viewport()->update();
+    });
+    // Rest von 1.5.3 (dauerhaftes "Geöffnet"-Schild, ersetzt durch den kurzen Ladekreis)
+    QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/opened.ini");
     reload();
     updateStatus();
-}
-
-void GalleryWindow::setOpened(const QString& path, bool opened) {
-    const QString k = openedKey(path);
-    if (opened_.contains(k) == opened) return;
-    QSettings ini(openedFile(), QSettings::IniFormat);
-    if (opened) {
-        opened_.insert(k);
-        ini.setValue(k, QDateTime::currentDateTime().toString(Qt::ISODate));
-    } else {
-        opened_.remove(k);
-        ini.remove(k);
-    }
-    for (int r = 0; r < model_.rowCount(); ++r)
-        if (QStandardItem* it = model_.item(r); it->data(kPathRole).toString() == path) it->setData(opened, kOpenedRole);
 }
 
 void GalleryWindow::reload() {
@@ -320,7 +305,6 @@ void GalleryWindow::reload() {
         it->setData(fi.absoluteFilePath(), kPathRole);
         it->setData(fi.size(), kSizeRole);
         it->setData(fi.lastModified(), kTimeRole);
-        it->setData(opened_.contains(openedKey(fi.absoluteFilePath())), kOpenedRole);
         it->setToolTip(fi.fileName());
         it->setEditable(false);
         model_.appendRow(it);
@@ -360,9 +344,18 @@ QString GalleryWindow::selected() const {
     return i.isValid() && view_->selectionModel()->isSelected(i) ? i.data(kPathRole).toString() : QString();
 }
 
+void GalleryWindow::showOpening(const QString& path) {
+    opening_.path = path;
+    opening_.clock.start();
+    spinTimer_.start();
+    view_->viewport()->repaint();
+}
+
 void GalleryWindow::openClip(const QString& path) {
     if (path.isEmpty()) return;
-    if (QDesktopServices::openUrl(QUrl::fromLocalFile(path))) setOpened(path, true);
+    showOpening(path);
+    // Erst den grauen Ladekreis zeigen, dann den Player starten (das kann einen Moment hängen)
+    QTimer::singleShot(40, this, [path] { QDesktopServices::openUrl(QUrl::fromLocalFile(path)); });
 }
 
 void GalleryWindow::contextMenu(const QPoint& pos) {
@@ -374,27 +367,21 @@ void GalleryWindow::contextMenu(const QPoint& pos) {
     QMenu m(this);
     m.addAction(icon(Ic::Play, pal.text), L("Play"), this, [this, path] { openClip(path); });
     m.addAction(icon(Ic::Reveal, pal.text), L("Show in folder"), this, [path] { revealInFolder(path); });
-    if (idx.data(kOpenedRole).toBool())
-        m.addAction(L("Mark as new"), this, [this, path] { setOpened(path, false); });
     m.addSeparator();
     m.addAction(icon(Ic::Rename, pal.text), L("Rename…"), this, [this, path] {
         QFileInfo fi(path);
         bool ok = false;
         const QString n = QInputDialog::getText(this, L("Rename clip"), L("New name:"), QLineEdit::Normal,
                                                 fi.completeBaseName(), &ok).trimmed();
-        const QString target = fi.dir().filePath(n + "." + fi.suffix());
-        if (ok && !n.isEmpty() && n != fi.completeBaseName() && QFile::rename(path, target)) {
-            if (opened_.contains(openedKey(path))) {  // Schild wandert mit
-                setOpened(path, false);
-                setOpened(target, true);
-            }
+        if (ok && !n.isEmpty() && n != fi.completeBaseName()) {
+            QFile::rename(path, fi.dir().filePath(n + "." + fi.suffix()));
             reload();
         }
     });
     m.addAction(icon(Ic::Trash, pal.text), L("Move to trash"), this, [this, path] {
         if (QMessageBox::question(this, "Clipline", L("Move \"%1\" to the trash?").arg(QFileInfo(path).fileName())) ==
             QMessageBox::Yes) {
-            if (QFile::moveToTrash(path)) setOpened(path, false);
+            QFile::moveToTrash(path);
             reload();
         }
     });

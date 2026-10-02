@@ -1,11 +1,11 @@
 #pragma once
+#include <QElapsedTimer>
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QLabel>
 #include <QListView>
 #include <QProcess>
 #include <QPushButton>
-#include <QSet>
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QWidget>
@@ -37,13 +37,21 @@ private:
 
 class Controller;
 
+// Kurz nach dem Anklicken: Kachel grau mit Ladekreis ("Wird geöffnet…"), bis der Player aufgeht
+struct OpeningHint {
+    static constexpr int kMs = 1100;
+    QString path;
+    QElapsedTimer clock;
+    bool active() const { return !path.isEmpty() && clock.isValid() && clock.elapsed() < kMs; }
+};
+
 class GalleryWindow : public QWidget {
     Q_OBJECT
 public:
     explicit GalleryWindow(Controller* ctl);
     void reload();
     void updateStatus();
-    void setOpened(const QString& path, bool opened);  // "Geöffnet"-Schild auf der Kachel (wird gespeichert)
+    void showOpening(const QString& path);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
@@ -54,11 +62,11 @@ private:
     QString selected() const;
 
     Controller* ctl_;
-    QSet<QString> opened_;  // Schlüssel geöffneter Clips (siehe openedKey)
     QStandardItemModel model_;
     QListView* view_;
     ThumbCache thumbs_;
     QFileSystemWatcher watcher_;
-    QTimer reloadTimer_, statusTimer_;
+    QTimer reloadTimer_, statusTimer_, spinTimer_;
+    OpeningHint opening_;
     QLabel *status_, *folder_, *count_, *empty_;
 };
