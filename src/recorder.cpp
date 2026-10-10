@@ -1,7 +1,9 @@
 #include "recorder.h"
 
 #include <QDateTime>
+#include <algorithm>
 #include <cmath>
+#include <vector>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -492,45 +494,106 @@ void Recorder::saveClip() {
         emit clipSaved(QString(), false, L("Could not save the clip."));
         return;
     }
+    bool written = true;
     for (size_t i = first; i < chunks_.size(); ++i) {
         const Chunk& c = chunks_[i];
         const qint64 a = std::max(start, c.off), b = std::min(end, c.off + qint64(c.data.size()));
-        if (b > a) tmp->write(c.data.constData() + (a - c.off), b - a);
+        if (b > a && tmp->write(c.data.constData() + (a - c.off), b - a) != b - a) written = false;
     }
-    tmp->flush();
+    written = tmp->flush() && written;
     tmp->close();
+    if (!written) {  // z. B. Systemlaufwerk voll
+        delete tmp;
+        emit clipSaved(QString(), false, L("Could not save the clip."));
+        return;
+    }
 
     QDir().mkpath(cfg_.clipsDir);
     const QString base = "Clip " + QDateTime::currentDateTime().toString("yyyy-MM-dd HH-mm-ss");
     QString out = QDir(cfg_.clipsDir).filePath(base + ".mp4");
     for (int n = 2; QFileInfo::exists(out); ++n) out = QDir(cfg_.clipsDir).filePath(QString("%1 (%2).mp4").arg(base).arg(n));
 
-    auto* p = new QProcess(this);
     const QString tsPath = tmp->fileName();
     const int secs = cfg_.clipSeconds;
-    connect(p, &QProcess::finished, this, [this, p, tmp, out, tsPath, secs](int code, QProcess::ExitStatus st) {
-        const QString err = QString::fromUtf8(p->readAllStandardError()).trimmed();
-        p->deleteLater();
-        const bool ok = st == QProcess::NormalExit && code == 0 && QFileInfo(out).size() > 1024;
-        if (ok) {
+    const bool wantAudio = (cfg_.systemAudio && systemAudioSupported()) || !cfg_.mic.isEmpty();
+    runFfmpeg({"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-sseof", QString("-%1").arg(secs), "-i", tsPath,
+               "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", out},
+              [this, tmp, out, tsPath, secs, wantAudio](bool ok, const QByteArray&, const QString& err) {
+        if (ok && QFileInfo(out).size() > 1024) {
             tmp->deleteLater();
-            emit clipSaved(out, true, QString());
+            verifyClip(out, secs, wantAudio);
             return;
         }
         // Fallback: ohne Suchen am Ende einfach alles umpacken
         QFile::remove(out);
-        auto* p2 = new QProcess(this);
-        connect(p2, &QProcess::finished, this, [this, p2, tmp, out, err](int c2, QProcess::ExitStatus s2) {
-            p2->deleteLater();
+        runFfmpeg({"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-i", tsPath, "-map", "0", "-c", "copy",
+                   "-movflags", "+faststart", out},
+                  [this, tmp, out, err, secs, wantAudio](bool ok2, const QByteArray&, const QString&) {
             tmp->deleteLater();
-            const bool ok2 = s2 == QProcess::NormalExit && c2 == 0 && QFileInfo(out).size() > 1024;
-            if (!ok2) QFile::remove(out);  // keine leere/kaputte Datei im Clip-Ordner liegen lassen
-            emit clipSaved(ok2 ? out : QString(), ok2, ok2 ? QString() : err);
+            if (ok2 && QFileInfo(out).size() > 1024) {
+                verifyClip(out, secs, wantAudio);
+                return;
+            }
+            QFile::remove(out);  // keine leere/kaputte Datei im Clip-Ordner liegen lassen
+            emit clipSaved(QString(), false, err.isEmpty() ? L("Could not save the clip.") : err);
         });
-        p2->start(ffmpegPath(), {"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-i", tsPath, "-map", "0", "-c", "copy",
-                                 "-movflags", "+faststart", out});
-        Q_UNUSED(secs);
     });
-    p->start(ffmpegPath(), {"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-sseof", QString("-%1").arg(secs), "-i", tsPath,
-                            "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", out});
+}
+
+// ffmpeg im Hintergrund ausführen. done kommt genau einmal - auch wenn ffmpeg gar nicht startet oder hängt
+// (dann nach 3 Minuten beendet), damit ein Speichern nie still im Nichts endet.
+void Recorder::runFfmpeg(const QStringList& args, std::function<void(bool, const QByteArray&, const QString&)> done) {
+    auto* p = new QProcess(this);
+    auto finish = [p, done](bool ok) {
+        if (p->property("done").toBool()) return;
+        p->setProperty("done", true);
+        const QByteArray out = p->readAllStandardOutput();
+        const QString err = QString::fromUtf8(p->readAllStandardError()).trimmed();
+        p->deleteLater();
+        done(ok, out, err);
+    };
+    connect(p, &QProcess::finished, this, [finish](int code, QProcess::ExitStatus st) { finish(st == QProcess::NormalExit && code == 0); });
+    connect(p, &QProcess::errorOccurred, this, [finish](QProcess::ProcessError e) {
+        if (e == QProcess::FailedToStart) finish(false);
+    });
+    QTimer::singleShot(180000, p, [p] { p->kill(); });
+    p->start(ffmpegPath(), args);
+}
+
+// Was einem gespeicherten Clip fehlt, leer = vollständig. framecrc listet jedes Videopaket mit Zeitstempel:
+// "#tb 0: 1/15360", dann "0, dts, pts, duration, size, hash".
+static QString clipProblem(bool ok, const QByteArray& crc, const QString& info, int secs, bool wantAudio) {
+    double tb = 0;
+    std::vector<qint64> pts;
+    qint64 lastDur = 0;
+    for (const QByteArray& line : crc.split('\n')) {
+        if (line.startsWith("#tb 0:")) {
+            const QList<QByteArray> f = line.mid(6).trimmed().split('/');
+            if (f.size() == 2 && f[1].toLongLong() > 0) tb = f[0].toDouble() / f[1].toDouble();
+        } else if (!line.startsWith('#')) {
+            const QList<QByteArray> f = line.split(',');
+            if (f.size() >= 4) {
+                pts.push_back(f[2].trimmed().toLongLong());
+                lastDur = f[3].trimmed().toLongLong();
+            }
+        }
+    }
+    if (!ok || pts.empty() || tb <= 0) return L("The clip has no picture.");
+    // Zeit mit Bild: Abstände bis 0,5 s zählen, größere Lücken (eingefrorenes/fehlendes Bild) nicht
+    std::sort(pts.begin(), pts.end());
+    double covered = lastDur * tb;
+    for (size_t i = 1; i < pts.size(); ++i) covered += std::min(0.5, (pts[i] - pts[i - 1]) * tb);
+    QStringList problems;
+    if (covered < secs - 1.5)
+        problems << L("Only %1 of %2 were recorded.").arg(fmtDuration(std::max(0, int(covered))), fmtDuration(secs));
+    if (wantAudio && !info.contains("Audio:")) problems << L("The clip has no sound.");
+    return problems.join(' ');
+}
+
+// Gespeicherten Clip nachprüfen: Bild über die ganze Länge, keine Lücken, Ton falls eingestellt
+void Recorder::verifyClip(const QString& out, int secs, bool wantAudio) {
+    runFfmpeg({"-hide_banner", "-nostats", "-i", out, "-map", "0:v:0", "-c", "copy", "-f", "framecrc", "-"},
+              [this, out, secs, wantAudio](bool ok, const QByteArray& crc, const QString& info) {
+        emit clipSaved(out, true, clipProblem(ok, crc, info, secs, wantAudio));
+    });
 }

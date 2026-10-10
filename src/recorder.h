@@ -4,6 +4,7 @@
 #include <QProcess>
 #include <QTimer>
 #include <deque>
+#include <functional>
 #include <memory>
 #include "config.h"
 #include "platform.h"
@@ -35,6 +36,7 @@ public:
 
 signals:
     void stateChanged();
+    // ok = Datei liegt im Clip-Ordner; error ist dann leer (vollständig) oder sagt, was dem Clip fehlt
     void clipSaved(const QString& path, bool ok, const QString& error);
     void warning(const QString& text);
     void waylandTokenChanged(const QString& token);  // Linux/Wayland: gemerkte Bildschirmfreigabe
@@ -51,6 +53,8 @@ private:
     void onFinished();
     void scanVideo(const QByteArray& data, qint64 now);
     void checkStall();
+    void runFfmpeg(const QStringList& args, std::function<void(bool ok, const QByteArray& out, const QString& err)> done);
+    void verifyClip(const QString& out, int secs, bool wantAudio);
     bool captureChanged(const Config& a, const Config& b) const;
     MicTuning tuning() const;
     bool startWayland();  // false = Portal-Dialog läuft noch / nicht möglich

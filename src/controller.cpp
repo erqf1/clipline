@@ -70,12 +70,16 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     connect(&rec_, &Recorder::warning, this, [this](const QString& w) {
         notify("Clipline", w, QSystemTrayIcon::Warning, 6000);
     });
-    // Ton erst, wenn feststeht, ob der Clip wirklich gespeichert ist (Hinweise blendet Windows im Spiel oft aus)
+    // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
+    // (Hinweise blendet Windows im Spiel oft aus)
     connect(&rec_, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
-        if (cfg_.sound) ok ? playSaveSound() : playErrorSound();
+        if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
         if (ok) {
             lastClip_ = path;
-            notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
+            if (err.isEmpty())
+                notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
+            else
+                notify(L("Clip incomplete"), QFileInfo(path).fileName() + "\n" + err, QSystemTrayIcon::Warning, 6000);
             if (gallery_) gallery_->reload();
             emit clipDone(path, true);
         } else {
@@ -192,7 +196,11 @@ void Controller::galleryClosed() {
 }
 
 void Controller::saveClip() {
-    if (!rec_.wanted()) return;
+    if (!rec_.wanted()) {
+        if (cfg_.sound) playErrorSound();
+        notify("Clipline", L("Recording is paused – no clip was saved."), QSystemTrayIcon::Warning, 5000);
+        return;
+    }
     rec_.saveClip();
 }
 

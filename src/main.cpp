@@ -133,6 +133,7 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     QObject::connect(&ctl, &Controller::clipDone, [&](const QString& p, bool o) { done = true; ok = o; clip = p; });
     QObject::connect(&ctl.recorder(), &Recorder::clipSaved, [&](const QString&, bool o, const QString& err) {
         if (!o) say("save error: " + err);
+        else if (!err.isEmpty()) say("clip incomplete: " + err);
     });
     QTimer::singleShot(secs * 1000, &ctl, &Controller::saveClip);
     QTimer::singleShot(secs * 1000 + 20000, &app, [&] { done = true; });
