@@ -148,6 +148,7 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         }
     }
     say(QString("clip ok=%1 path=%2 size=%3").arg(ok).arg(clip).arg(QFileInfo(clip).size()));
+    say(QString("stall restarts: %1").arg(ctl.recorder().stallRestarts()));
     ctl.showGallery();
     GalleryWindow* g = ctl.gallery();
     g->setAttribute(Qt::WA_DontShowOnScreen);

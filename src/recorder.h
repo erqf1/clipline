@@ -28,6 +28,7 @@ public:
     double bufferedSeconds() const;
     qint64 bufferedBytes() const { return total_ - (chunks_.empty() ? total_ : chunks_.front().off); }
     QString encoder() const { return encoder_; }
+    int stallRestarts() const { return stallRestarts_; }
     void saveClip();
 
     static QString detectEncoder(bool forceRecheck = false);
@@ -48,6 +49,8 @@ private:
     void launch();
     void onOutput();
     void onFinished();
+    void scanVideo(const QByteArray& data, qint64 now);
+    void checkStall();
     bool captureChanged(const Config& a, const Config& b) const;
     MicTuning tuning() const;
     bool startWayland();  // false = Portal-Dialog läuft noch / nicht möglich
@@ -64,8 +67,11 @@ private:
     std::deque<Chunk> chunks_;
     qint64 total_ = 0;
     QElapsedTimer clock_, runTime_;
-    QTimer retry_;
+    QTimer retry_, watchdog_;
     bool wanted_ = false, audioOk_ = true, gotData_ = false, micMuted_ = false;
-    int fails_ = 0;
+    int fails_ = 0, stallRestarts_ = 0;
     QByteArray errTail_;
+    // Wächter: ffmpeg kann weiterlaufen, obwohl keine Bilder mehr kommen (nur noch Ton im Puffer)
+    qint64 launchedAt_ = 0, lastVideo_ = -1;  // clock_-Zeit des Starts / des letzten Videobilds
+    QByteArray tsCarry_;                      // angefangenes TS-Paket aus dem letzten Lesevorgang
 };

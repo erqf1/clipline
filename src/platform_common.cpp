@@ -10,6 +10,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 #include "platform.h"
 
@@ -113,4 +114,8 @@ bool systemAudioSupported() {
 }
 
 void playSaveSound() { QApplication::beep(); }
+void playErrorSound() {
+    QApplication::beep();
+    QTimer::singleShot(220, [] { QApplication::beep(); });
+}
 #endif

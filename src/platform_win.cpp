@@ -138,26 +138,33 @@ bool setAutostart(bool on) {
 
 // ---------------------------------------------------------------- Ton beim Speichern
 // Kurzer, weicher Zwei-Ton (synthetisiert, als WAV im Speicher)
+static std::vector<char> twoTone(double f1, double f2, double secs) {
+    const int rate = 44100;
+    const int n = int(rate * secs);
+    std::vector<int16_t> s(n);
+    for (int i = 0; i < n; ++i) {
+        const double t = double(i) / rate;
+        const double f = t < 0.07 ? f1 : f2;
+        const double env = std::exp(-t * 18.0) * std::min(1.0, t * 400.0);
+        s[i] = int16_t(std::sin(2 * 3.14159265 * f * t) * env * 9000);
+    }
+    std::vector<char> w(44 + n * 2);
+    auto put32 = [&](int off, uint32_t v) { memcpy(&w[off], &v, 4); };
+    auto put16 = [&](int off, uint16_t v) { memcpy(&w[off], &v, 2); };
+    memcpy(&w[0], "RIFF", 4); put32(4, uint32_t(36 + n * 2)); memcpy(&w[8], "WAVEfmt ", 8);
+    put32(16, 16); put16(20, 1); put16(22, 1); put32(24, rate); put32(28, rate * 2); put16(32, 2); put16(34, 16);
+    memcpy(&w[36], "data", 4); put32(40, uint32_t(n * 2));
+    memcpy(&w[44], s.data(), n * 2);
+    return w;
+}
+
 void playSaveSound() {
-    static std::vector<char> wav = [] {
-        const int rate = 44100;
-        const int n = rate * 18 / 100;
-        std::vector<int16_t> s(n);
-        for (int i = 0; i < n; ++i) {
-            const double t = double(i) / rate;
-            const double f = t < 0.07 ? 880.0 : 1318.5;
-            const double env = std::exp(-t * 18.0) * std::min(1.0, t * 400.0);
-            s[i] = int16_t(std::sin(2 * 3.14159265 * f * t) * env * 9000);
-        }
-        std::vector<char> w(44 + n * 2);
-        auto put32 = [&](int off, uint32_t v) { memcpy(&w[off], &v, 4); };
-        auto put16 = [&](int off, uint16_t v) { memcpy(&w[off], &v, 2); };
-        memcpy(&w[0], "RIFF", 4); put32(4, uint32_t(36 + n * 2)); memcpy(&w[8], "WAVEfmt ", 8);
-        put32(16, 16); put16(20, 1); put16(22, 1); put32(24, rate); put32(28, rate * 2); put16(32, 2); put16(34, 16);
-        memcpy(&w[36], "data", 4); put32(40, uint32_t(n * 2));
-        memcpy(&w[44], s.data(), n * 2);
-        return w;
-    }();
+    static const std::vector<char> wav = twoTone(880.0, 1318.5, 0.18);  // hell, aufwärts
+    PlaySoundA(wav.data(), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+}
+
+void playErrorSound() {
+    static const std::vector<char> wav = twoTone(392.0, 261.6, 0.22);  // tief, abwärts
     PlaySoundA(wav.data(), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
 }
 

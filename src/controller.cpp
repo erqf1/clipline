@@ -70,7 +70,9 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     connect(&rec_, &Recorder::warning, this, [this](const QString& w) {
         notify("Clipline", w, QSystemTrayIcon::Warning, 6000);
     });
+    // Ton erst, wenn feststeht, ob der Clip wirklich gespeichert ist (Hinweise blendet Windows im Spiel oft aus)
     connect(&rec_, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
+        if (cfg_.sound) ok ? playSaveSound() : playErrorSound();
         if (ok) {
             lastClip_ = path;
             notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
@@ -191,7 +193,6 @@ void Controller::galleryClosed() {
 
 void Controller::saveClip() {
     if (!rec_.wanted()) return;
-    if (cfg_.sound) playSaveSound();
     rec_.saveClip();
 }
 

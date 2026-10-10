@@ -27,7 +27,8 @@ bool systemAudioSupported();
 bool setAutostart(bool on);
 QString ffmpegPath();
 void revealInFolder(const QString& path);
-void playSaveSound();
+void playSaveSound();   // Clip ist gespeichert
+void playErrorSound();  // Speichern ist gescheitert (Hinweise sieht man im Vollbild-Spiel oft nicht)
 
 // ---------------------------------------------------------------- Globaler Hotkey
 class GlobalHotkey : public QObject {

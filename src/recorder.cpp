@@ -15,11 +15,24 @@
 #endif
 
 static constexpr int kTsPacket = 188;
+static constexpr qint64 kStallMs = 6000;        // so lange ohne neues Bild = Aufnahme hängt
+static constexpr qint64 kFirstFrameMs = 12000;  // Anlauf (Encoder, erstes Bild) darf länger dauern
+
+// TS-Paket, mit dem ein neues Videobild beginnt: PES-Start mit Stream-ID 0xE0..0xEF
+static bool isVideoStart(const uchar* p) {
+    if (p[0] != 0x47 || !(p[1] & 0x40)) return false;  // Sync-Byte, payload_unit_start_indicator
+    const int afc = (p[3] >> 4) & 3;
+    if (!(afc & 1)) return false;  // keine Nutzdaten
+    const int off = afc & 2 ? 5 + p[4] : 4;
+    return off + 4 <= kTsPacket && p[off] == 0 && p[off + 1] == 0 && p[off + 2] == 1 && (p[off + 3] & 0xF0) == 0xE0;
+}
 
 Recorder::Recorder(QObject* parent) : QObject(parent) {
     clock_.start();
     retry_.setSingleShot(true);
     connect(&retry_, &QTimer::timeout, this, &Recorder::launch);
+    connect(&watchdog_, &QTimer::timeout, this, &Recorder::checkStall);
+    watchdog_.start(1000);
 }
 
 Recorder::~Recorder() { stop(); }
@@ -196,6 +209,9 @@ QStringList Recorder::buildArgs(bool withAudio) {
     bool audioInVideoInput = false;
 
 #if defined(Q_OS_WIN)
+    // Selbsttest: Bild nach N Sekunden enden lassen, der Ton läuft weiter (wie ddagrab nach "Access lost")
+    if (const int stall = qEnvironmentVariableIntValue("CLIPLINE_TESTSTALL"); stall > 0 && stallRestarts_ == 0)
+        a << "-t" << QString::number(stall);
     if (mon.ddaIndex >= 0) {
         a << "-f" << "lavfi" << "-i"
           << QString("ddagrab=output_idx=%1:framerate=%2:draw_mouse=1").arg(mon.ddaIndex).arg(fps);
@@ -332,6 +348,9 @@ void Recorder::launch() {
     total_ = 0;
     gotData_ = false;
     errTail_.clear();
+    tsCarry_.clear();
+    launchedAt_ = clock_.elapsed();
+    lastVideo_ = -1;
 
     const bool withAudio = audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty());
     const QStringList args = buildArgs(withAudio);
@@ -379,9 +398,40 @@ void Recorder::onOutput() {
     else
         chunks_.back().data.append(data);
     total_ += data.size();
+    scanVideo(data, now);
     // Alles verwerfen, was älter ist als Cliplänge + Reserve
     const qint64 keepFrom = now - qint64(cfg_.clipSeconds + 6) * 1000;
     while (chunks_.size() > 1 && chunks_[1].t < keepFrom) chunks_.pop_front();
+}
+
+// Merkt sich, wann zuletzt ein Videobild im Strom war. Die TS-Pakete liegen ab Stream-Beginn auf 188er-Grenzen;
+// ein über zwei Lesevorgänge verteiltes Paket wird in tsCarry_ zusammengesetzt.
+void Recorder::scanVideo(const QByteArray& data, qint64 now) {
+    const auto* p = reinterpret_cast<const uchar*>(data.constData());
+    const qint64 n = data.size();
+    qint64 i = 0;
+    if (!tsCarry_.isEmpty()) {
+        i = std::min<qint64>(kTsPacket - tsCarry_.size(), n);
+        tsCarry_.append(data.constData(), i);
+        if (tsCarry_.size() < kTsPacket) return;
+        if (isVideoStart(reinterpret_cast<const uchar*>(tsCarry_.constData()))) lastVideo_ = now;
+        tsCarry_.clear();
+    }
+    for (; i + kTsPacket <= n; i += kTsPacket)
+        if (isVideoStart(p + i)) lastVideo_ = now;
+    if (i < n) tsCarry_.append(data.constData() + i, n - i);
+}
+
+// ffmpeg läuft, liefert aber keine Bilder mehr: Unter Windows baut ddagrab die Desktop Duplication nicht neu auf,
+// wenn Windows den Zugriff entzieht (Vollbild-/Auflösungswechsel im Spiel, UAC, Sperrbildschirm). Dann endet nur
+// der Bildstrom, der Ton läuft weiter und jeder Clip scheitert. Neu starten holt das Bild zurück.
+void Recorder::checkStall() {
+    if (!wanted_ || !proc_ || proc_->state() != QProcess::Running) return;
+    const qint64 now = clock_.elapsed();
+    const bool hadVideo = lastVideo_ >= launchedAt_;
+    if (now - (hadVideo ? lastVideo_ : launchedAt_) < (hadVideo ? kStallMs : kFirstFrameMs)) return;
+    ++stallRestarts_;
+    launch();
 }
 
 void Recorder::onFinished() {
@@ -402,7 +452,14 @@ void Recorder::onFinished() {
     if (quick && fails_ >= 2 && wayland_) wayland_->close();
 #endif
     // Häufigste Ursache für sofortiges Scheitern: Audiogerät. Dann ohne Ton weiter.
-    if (quick && fails_ >= 2 && audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
+    // Windows: Den Ton liefert Clipline selbst über die Pipe (fehlende Geräte werden zu Stille). Scheitert ffmpeg dort
+    // sofort, liegt es fast immer am Bild (z. B. Sperrbildschirm/UAC) - dann den Ton nicht dauerhaft abschalten.
+#if defined(Q_OS_WIN)
+    const bool audioFault = err.contains("clipline_audio");
+#else
+    const bool audioFault = true;
+#endif
+    if (quick && fails_ >= 2 && audioFault && audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
         audioOk_ = false;
         fails_ = 0;
         emit warning(L("The audio device could not be opened. Recording continues without sound."));
@@ -413,7 +470,8 @@ void Recorder::onFinished() {
 }
 
 void Recorder::saveClip() {
-    if (chunks_.empty() || total_ < kTsPacket * 50) {
+    // Ohne ein einziges Bild seit dem (Neu-)Start wird ffmpeg den Clip nicht schreiben können
+    if (chunks_.empty() || total_ < kTsPacket * 50 || lastVideo_ < launchedAt_) {
         emit clipSaved(QString(), false, L("Nothing recorded yet."));
         return;
     }
