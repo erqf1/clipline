@@ -8,11 +8,12 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusVariant>
+#include <QFileInfo>
 #include <QKeySequence>
-#include <QProcess>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include "i18n.h"
 #include "platform.h"
 
 namespace {
@@ -84,11 +85,25 @@ QString randomToken() { return QString("clipline%1").arg(QRandomGenerator::globa
 bool run(const QString& program, const QStringList& args) {
     QProcess p;
     p.start(program, args);
-    if (!p.waitForFinished(3000) || p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) return false;
-    const QString out = QString::fromUtf8(p.readAllStandardOutput()).trimmed().toLower();
-    return !out.contains("error") && !out.contains("invalid");
+    const bool finished = p.waitForFinished(3000);
+    const QString out = QString::fromUtf8(p.readAllStandardOutput() + p.readAllStandardError()).trimmed();
+    const bool ok = finished && p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0 &&
+                    !out.toLower().contains("error") && !out.toLower().contains("invalid");
+    appLog(QString("hotkey: %1 %2 -> %3 %4").arg(program, args.join(' '), ok ? "ok" : "FAILED", out.left(200)));
+    return ok;
 }
 }  // namespace
+
+void registerPortalApp() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    QDBusMessage reg = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.host.portal.Registry", "Register");
+    reg.setArguments({QString(kLinuxAppId), QVariantMap()});
+    const QDBusMessage r = QDBusConnection::sessionBus().call(reg, QDBus::Block, 3000);
+    appLog(r.type() == QDBusMessage::ReplyMessage ? QString("portal: registered as %1").arg(kLinuxAppId)
+                                                  : "portal: register not possible: " + r.errorMessage());
+}
 
 bool WaylandHotkeys::isWayland() {
     return qEnvironmentVariable("XDG_SESSION_TYPE") == "wayland" || !qEnvironmentVariable("WAYLAND_DISPLAY").isEmpty();
@@ -99,34 +114,89 @@ WaylandHotkeys& WaylandHotkeys::instance() {
     return *inst;
 }
 
+QString WaylandHotkeys::backendName() const {
+    switch (backend_) {
+    case Hyprland: return "Hyprland";
+    case Sway: return "Sway";
+    case Portal: return "Portal";
+    default: return "none";
+    }
+}
+
 WaylandHotkeys::WaylandHotkeys() {
     qDBusRegisterMetaType<PortalShortcut>();
     qDBusRegisterMetaType<QList<PortalShortcut>>();
     rebind_.setSingleShot(true);
     rebind_.setInterval(300);
     connect(&rebind_, &QTimer::timeout, this, &WaylandHotkeys::portalRebind);
+    watchRetry_.setSingleShot(true);
+    watchRetry_.setInterval(5000);
+    connect(&watchRetry_, &QTimer::timeout, this, &WaylandHotkeys::watchCompositor);
+    registerPortalApp();
     if (!qEnvironmentVariableIsEmpty("HYPRLAND_INSTANCE_SIGNATURE") && !QStandardPaths::findExecutable("hyprctl").isEmpty()) {
         backend_ = Hyprland;
-        return;
-    }
-    if (!qEnvironmentVariableIsEmpty("SWAYSOCK") && !QStandardPaths::findExecutable("swaymsg").isEmpty()) {
+    } else if (!qEnvironmentVariableIsEmpty("SWAYSOCK") && !QStandardPaths::findExecutable("swaymsg").isEmpty()) {
         backend_ = Sway;
-        return;
+    } else {
+        QDBusConnection bus = QDBusConnection::sessionBus();
+        QDBusMessage get = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.DBus.Properties", "Get");
+        get.setArguments({QString(kShortcuts), QString("version")});
+        const QDBusMessage reply = bus.call(get, QDBus::Block, 3000);
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty() &&
+            reply.arguments().first().value<QDBusVariant>().variant().toUInt() > 0) {
+            backend_ = Portal;
+            bus.connect(kService, kPath, kShortcuts, "Activated", this,
+                        SLOT(onActivated(QDBusObjectPath, QString, qulonglong, QVariantMap)));
+        } else {
+            appLog("hotkey: no GlobalShortcuts portal: " +
+                   (reply.errorMessage().isEmpty() ? QString("version 0") : reply.errorMessage()));
+        }
     }
-    QDBusConnection bus = QDBusConnection::sessionBus();
-    // Neuere Portale wollen wissen, welche App fragt (sonst lehnen manche GlobalShortcuts ab)
-    QDBusMessage reg = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.host.portal.Registry", "Register");
-    reg.setArguments({QString("clipline"), QVariantMap()});
-    bus.call(reg, QDBus::Block, 2000);
-    QDBusMessage get = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.DBus.Properties", "Get");
-    get.setArguments({QString(kShortcuts), QString("version")});
-    const QDBusMessage reply = bus.call(get, QDBus::Block, 3000);
-    if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty() &&
-        reply.arguments().first().value<QDBusVariant>().variant().toUInt() > 0) {
-        backend_ = Portal;
-        bus.connect(kService, kPath, kShortcuts, "Activated", this,
-                    SLOT(onActivated(QDBusObjectPath, QString, qulonglong, QVariantMap)));
+    appLog(QString("hotkey: Wayland backend %1 (desktop %2)").arg(backendName(), qEnvironmentVariable("XDG_CURRENT_DESKTOP")));
+    if (backend_ == Hyprland || backend_ == Sway) {
+        connect(&hyprEvents_, &QLocalSocket::readyRead, this, [this] {
+            bool reloaded = false;
+            while (hyprEvents_.canReadLine()) reloaded |= hyprEvents_.readLine().startsWith("configreloaded>>");
+            if (reloaded) QTimer::singleShot(300, this, &WaylandHotkeys::rebindCompositor);
+        });
+        connect(&hyprEvents_, &QLocalSocket::disconnected, &watchRetry_, qOverload<>(&QTimer::start));
+        connect(&swayEvents_, &QProcess::readyReadStandardOutput, this, [this] {
+            static const QRegularExpression reload(R"("change"\s*:\s*"reload")");
+            if (reload.match(QString::fromUtf8(swayEvents_.readAllStandardOutput())).hasMatch())
+                QTimer::singleShot(300, this, &WaylandHotkeys::rebindCompositor);
+        });
+        connect(&swayEvents_, &QProcess::finished, &watchRetry_, qOverload<>(&QTimer::start));
+        watchCompositor();
     }
+}
+
+// Hyprland/Sway vergessen per Befehl eingetragene Tasten, sobald ihre Einstellungen neu geladen werden
+// (bei Hyprland schon beim Speichern der Konfigurationsdatei). Darauf horchen und neu eintragen.
+void WaylandHotkeys::watchCompositor() {
+    if (backend_ == Hyprland) {
+        if (hyprEvents_.state() != QLocalSocket::UnconnectedState) return;
+        const QString sig = qEnvironmentVariable("HYPRLAND_INSTANCE_SIGNATURE");
+        for (const QString& dir : {qEnvironmentVariable("XDG_RUNTIME_DIR") + "/hypr/", QString("/tmp/hypr/")}) {
+            const QString path = dir + sig + "/.socket2.sock";
+            if (!QFileInfo::exists(path)) continue;
+            hyprEvents_.connectToServer(path);
+            if (hyprEvents_.waitForConnected(1000)) return;
+        }
+        watchRetry_.start();
+    } else if (backend_ == Sway) {
+        if (swayEvents_.state() != QProcess::NotRunning) return;
+        swayEvents_.start("swaymsg", {"-m", "-t", "subscribe", "[\"workspace\"]"});
+    }
+}
+
+void WaylandHotkeys::rebindCompositor() {
+    QStringList done;
+    for (const Key& k : keys_) {
+        if (done.contains(k.sequence)) continue;
+        done << k.sequence;
+        compositorBind(k.sequence, true);
+    }
+    appLog(QString("hotkey: compositor settings reloaded, %1 key(s) bound again").arg(done.size()));
 }
 
 QString WaylandHotkeys::idFor(const QString& sequence) {
@@ -134,7 +204,8 @@ QString WaylandHotkeys::idFor(const QString& sequence) {
 }
 
 // Hyprland/Sway: Taste direkt im Compositor eintragen bzw. wieder austragen (gilt bis zum Neustart des Compositors;
-// Clipline trägt sie bei jedem Start neu ein)
+// Clipline trägt sie bei jedem Start neu ein). Vor dem Eintragen austragen: Reste eines abgestürzten Clipline
+// würden sonst doppelt auslösen.
 bool WaylandHotkeys::compositorBind(const QString& sequence, bool bind) {
     const QKeyCombination kc = combo(sequence);
     const Qt::KeyboardModifiers m = kc.keyboardModifiers();
@@ -149,7 +220,9 @@ bool WaylandHotkeys::compositorBind(const QString& sequence, bool bind) {
         if (m & Qt::ShiftModifier) mods << "SHIFT";
         if (m & Qt::MetaModifier) mods << "SUPER";
         const QString head = mods.join(' ') + ", " + key;
-        return bind ? run("hyprctl", {"keyword", "bind", head + ", exec, " + cmd}) : run("hyprctl", {"keyword", "unbind", head});
+        if (!bind) return run("hyprctl", {"keyword", "unbind", head});
+        QProcess::execute("hyprctl", {"keyword", "unbind", head});
+        return run("hyprctl", {"keyword", "bind", head + ", exec, " + cmd});
     }
     const QString key = keyName(kc.key(), true);
     if (key.isEmpty()) return false;
@@ -191,26 +264,59 @@ void WaylandHotkeys::remove(GlobalHotkey* hotkey) {
 
 void WaylandHotkeys::trigger(const QString& sequence) {
     const QKeySequence want(sequence);
+    int hits = 0;
     for (auto it = keys_.begin(); it != keys_.end(); ++it)
-        if (QKeySequence(it->sequence) == want) emit it.key()->activated();
+        if (QKeySequence(it->sequence) == want) {
+            ++hits;
+            emit it.key()->activated();
+        }
+    appLog(QString("hotkey: %1 pressed (compositor), %2 action(s)").arg(sequence).arg(hits));
 }
 
 // ---------------------------------------------------------------- Portal "GlobalShortcuts"
-// Neue Sitzung, dann alle Tasten auf einmal eintragen (manche Portale erlauben BindShortcuts nur einmal pro Sitzung)
+QString WaylandHotkeys::portalTrigger(const QString& sequence) {
+    const QKeyCombination kc = combo(sequence);
+    const Qt::KeyboardModifiers m = kc.keyboardModifiers();
+    QStringList trig;
+    if (m & Qt::ControlModifier) trig << "CTRL";
+    if (m & Qt::AltModifier) trig << "ALT";
+    if (m & Qt::ShiftModifier) trig << "SHIFT";
+    if (m & Qt::MetaModifier) trig << "LOGO";
+    trig << keyName(kc.key(), true);
+    return trig.join('+');
+}
+
+QString WaylandHotkeys::portalWanted() const {
+    QStringList all;
+    for (const Key& k : keys_) {
+        const QString e = idFor(k.sequence) + "=" + portalTrigger(k.sequence) + "=" + k.description;
+        if (!all.contains(e)) all << e;
+    }
+    all.sort();
+    return all.join(';');
+}
+
+// Neue Sitzung, dann alle Tasten auf einmal eintragen (manche Portale erlauben BindShortcuts nur einmal pro Sitzung).
+// Sind es dieselben Tasten wie schon eingetragen, bleibt die Sitzung einfach bestehen - auch wenn die Tasten kurz
+// weg waren (Einstellungen offen). So fragt das System nicht bei jedem Speichern der Einstellungen neu.
 void WaylandHotkeys::portalRebind() {
     if (step_ != Idle) {  // läuft noch: danach nochmal
         rebind_.start();
         return;
     }
+    if (keys_.isEmpty()) return;
+    const QString want = portalWanted();
+    if (want == bound_ && !session_.isEmpty()) return;
     QDBusConnection bus = QDBusConnection::sessionBus();
     if (!session_.isEmpty()) {
         bus.call(QDBusMessage::createMethodCall(kService, session_, "org.freedesktop.portal.Session", "Close"), QDBus::NoBlock);
         session_.clear();
     }
-    if (keys_.isEmpty()) return;
+    bound_.clear();
     step_ = Create;
     QVariantMap opt;
     opt["session_handle_token"] = randomToken();
+    appLog("portal: creating shortcut session");
     portalRequest("CreateSession", {}, opt);
 }
 
@@ -229,11 +335,15 @@ void WaylandHotkeys::portalRequest(const QString& method, QList<QVariant> args, 
     args << options;
     msg.setArguments(args);
     auto* w = new QDBusPendingCallWatcher(bus.asyncCall(msg), this);
-    connect(w, &QDBusPendingCallWatcher::finished, this, [this, w] {
+    connect(w, &QDBusPendingCallWatcher::finished, this, [this, w, method] {
         w->deleteLater();
         QDBusPendingReply<QDBusObjectPath> r = *w;
         if (r.isError()) {
             step_ = Idle;
+            bound_.clear();
+            appLog(QString("portal: %1 failed: %2").arg(method, r.error().message()));
+            emit problem(L("Your desktop did not set up the hotkey. Set a key for Clipline in your system settings "
+                           "(Shortcuts), or bind the command \"clipline --save\" to a key."));
             return;
         }
         if (r.value().path() != requestPath_) {  // sehr alte Portale nutzen einen anderen Pfad
@@ -247,40 +357,60 @@ void WaylandHotkeys::portalRequest(const QString& method, QList<QVariant> args, 
 
 void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
     if (response != 0) {
+        appLog(QString("portal: %1 answered %2 (1 = declined)").arg(step_ == Create ? "CreateSession" : "BindShortcuts").arg(response));
         step_ = Idle;
+        bound_.clear();
+        emit problem(L("Your desktop did not set up the hotkey. Set a key for Clipline in your system settings "
+                       "(Shortcuts), or bind the command \"clipline --save\" to a key."));
         return;
     }
     if (step_ == Create) {
         session_ = results.value("session_handle").toString();
         QList<PortalShortcut> list;
-        QMap<QString, bool> seen;
+        QStringList seen;
         for (const Key& k : keys_) {
             const QString id = idFor(k.sequence);
             if (seen.contains(id)) continue;
-            seen[id] = true;
-            const QKeyCombination kc = combo(k.sequence);
-            const Qt::KeyboardModifiers m = kc.keyboardModifiers();
-            QStringList trig;
-            if (m & Qt::ControlModifier) trig << "CTRL";
-            if (m & Qt::AltModifier) trig << "ALT";
-            if (m & Qt::ShiftModifier) trig << "SHIFT";
-            if (m & Qt::MetaModifier) trig << "LOGO";
-            trig << keyName(kc.key(), true);
+            seen << id;
             PortalShortcut s;
             s.id = id;
             s.props["description"] = k.description.isEmpty() ? QString("Clipline") : k.description;
-            s.props["preferred_trigger"] = trig.join('+');
+            s.props["preferred_trigger"] = portalTrigger(k.sequence);
             list << s;
         }
+        appLog(QString("portal: session %1, binding %2").arg(session_, seen.join(", ")));
         step_ = Bind;
+        bound_ = portalWanted();
         portalRequest("BindShortcuts", {QVariant::fromValue(QDBusObjectPath(session_)), QVariant::fromValue(list), QString()}, {});
     } else {
         step_ = Idle;
+        // Was das System eingetragen hat: ohne Taste (belegt/abgelehnt) löst es nie aus
+        QList<PortalShortcut> got;
+        const QVariant v = results.value("shortcuts");
+        if (v.canConvert<QDBusArgument>()) v.value<QDBusArgument>() >> got;
+        QStringList missing, info;
+        for (const PortalShortcut& s : got) {
+            const QString trig = s.props.value("trigger_description").toString();
+            info << s.id + " -> " + (trig.isEmpty() ? QString("(no key)") : trig);
+            if (trig.isEmpty()) missing << s.id;
+        }
+        appLog("portal: bound " + (info.isEmpty() ? QString("(no details)") : info.join(", ")));
+        if (!missing.isEmpty() && missing.size() == got.size())
+            emit problem(L("Your desktop did not set up the hotkey. Set a key for Clipline in your system settings "
+                           "(Shortcuts), or bind the command \"clipline --save\" to a key."));
     }
 }
 
 void WaylandHotkeys::onActivated(const QDBusObjectPath& session, const QString& id, qulonglong, const QVariantMap&) {
-    if (session.path() != session_) return;
+    if (session.path() != session_) {
+        appLog(QString("portal: %1 pressed for an old session, ignored").arg(id));
+        return;
+    }
+    int hits = 0;
     for (auto it = keys_.begin(); it != keys_.end(); ++it)
-        if (idFor(it->sequence) == id) emit it.key()->activated();
+        if (idFor(it->sequence) == id) {
+            ++hits;
+            emit it.key()->activated();
+        }
+    appLog(QString("portal: %1 pressed, %2 action(s)").arg(id).arg(hits));
 }

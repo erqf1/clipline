@@ -14,6 +14,8 @@
 #include <QStandardPaths>
 #include <unistd.h>
 #include "i18n.h"
+#include "platform.h"
+#include "wayland_hotkeys.h"
 
 namespace {
 const char* kService = "org.freedesktop.portal.Desktop";
@@ -55,7 +57,9 @@ bool WaylandCapture::gstreamerAvailable() {
 }
 
 void WaylandCapture::open(const QString& restoreToken) {
+    registerPortalApp();
     close();
+    appLog(QString("record: asking the portal for the screen (%1)").arg(restoreToken.isEmpty() ? "first time" : "saved choice"));
     token_ = restoreToken;
     step_ = Create;
     QVariantMap opt;
@@ -69,8 +73,6 @@ void WaylandCapture::close() {
                                            QDBus::NoBlock);
         session_.clear();
     }
-    if (fd_ >= 0) ::close(fd_);
-    fd_ = -1;
     node_ = 0;
     if (!requestPath_.isEmpty())
         QDBusConnection::sessionBus().disconnect(kService, requestPath_, kRequest, "Response", this,
@@ -163,35 +165,41 @@ void WaylandCapture::onResponse(uint response, const QVariantMap& results) {
 }
 
 void WaylandCapture::finish() {
-    QDBusMessage msg = QDBusMessage::createMethodCall(kService, kPath, kScreenCast, "OpenPipeWireRemote");
-    msg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QVariantMap()});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 10000);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty())
-        return fail(reply.errorMessage().isEmpty() ? L("PipeWire could not be opened.") : reply.errorMessage());
-    const QDBusUnixFileDescriptor fd = reply.arguments().first().value<QDBusUnixFileDescriptor>();
-    // Eigene Kopie ohne CLOEXEC: GStreamer erbt sie als Kindprozess
-    fd_ = fd.isValid() ? ::dup(fd.fileDescriptor()) : -1;
-    if (fd_ < 0) return fail(L("PipeWire could not be opened."));
     if (size_.isEmpty() && QGuiApplication::primaryScreen()) {
         QScreen* s = QGuiApplication::primaryScreen();
         size_ = s->geometry().size() * s->devicePixelRatio();
     }
     step_ = Idle;
+    appLog(QString("record: screen shared (node %1, %2x%3)").arg(node_).arg(size_.width()).arg(size_.height()));
     emit done(true, QString());
 }
 
+int WaylandCapture::openRemote() {
+    if (!isOpen()) return -1;
+    QDBusMessage msg = QDBusMessage::createMethodCall(kService, kPath, kScreenCast, "OpenPipeWireRemote");
+    msg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QVariantMap()});
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 10000);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+        appLog("record: OpenPipeWireRemote failed: " + reply.errorMessage());
+        return -1;
+    }
+    const QDBusUnixFileDescriptor fd = reply.arguments().first().value<QDBusUnixFileDescriptor>();
+    return fd.isValid() ? ::dup(fd.fileDescriptor()) : -1;  // dup ohne CLOEXEC: GStreamer erbt sie
+}
+
 void WaylandCapture::fail(const QString& error) {
+    appLog("record: screen sharing failed: " + error);
     const QString keep = token_;
     close();
     token_ = keep;
     emit done(false, error);
 }
 
-QStringList WaylandCapture::gstArgs(const QSize& out, int fps) const {
+QStringList WaylandCapture::gstArgs(int fd, const QSize& out, int fps) const {
     // keepalive-time: PipeWire schickt bei stillem Bild nichts - das letzte Bild alle 100 ms wiederholen,
     // videorate füllt auf die Bildrate auf (sonst stockt ffmpeg und der Ton läuft davon)
     return {"-q",
-            "pipewiresrc", QString("fd=%1").arg(fd_), QString("path=%1").arg(node_), "do-timestamp=true",
+            "pipewiresrc", QString("fd=%1").arg(fd), QString("path=%1").arg(node_), "do-timestamp=true",
             "keepalive-time=100", "always-copy=true",
             "!", "videoconvert", "!", "videoscale", "!", "videorate",
             "!", QString("video/x-raw,format=NV12,width=%1,height=%2,framerate=%3/1,pixel-aspect-ratio=1/1")

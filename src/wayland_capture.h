@@ -21,16 +21,19 @@ public:
     // Startet die Portal-Sitzung (asynchron); danach kommt genau einmal done(ok, error).
     void open(const QString& restoreToken);
     void close();
-    bool isOpen() const { return fd_ >= 0 && node_ != 0; }
+    bool isOpen() const { return !session_.isEmpty() && node_ != 0 && step_ == Idle; }
     bool busy() const { return step_ != Idle; }
 
-    int pipewireFd() const { return fd_; }
+    // Neue PipeWire-Verbindung für genau einen GStreamer-Start (ohne CLOEXEC, damit das Kind sie erbt; danach
+    // selbst schließen). Eine schon benutzte Verbindung lässt sich nicht an einen neuen Prozess weitergeben -
+    // genau das ließ die Aufnahme nach jedem Neustart scheitern und den Puffer leeren. -1 = geht nicht.
+    int openRemote();
     quint32 node() const { return node_; }
     QSize size() const { return size_; }           // kann leer sein, wenn das Portal keine Größe meldet
     QString restoreToken() const { return token_; }  // für den nächsten Start ohne Dialog
 
     // gst-launch-1.0-Argumente: PipeWire-Strom -> NV12 in Zielgröße/Bildrate -> stdout
-    QStringList gstArgs(const QSize& out, int fps) const;
+    QStringList gstArgs(int fd, const QSize& out, int fps) const;
 
 signals:
     void done(bool ok, const QString& error);
@@ -47,7 +50,6 @@ private:
 
     Step step_ = Idle;
     QString session_, token_, requestPath_;
-    int fd_ = -1;
     quint32 node_ = 0;
     QSize size_;
 };

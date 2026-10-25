@@ -13,6 +13,7 @@
 #include "i18n.h"
 #if defined(Q_OS_LINUX)
 #include <QStandardPaths>
+#include <unistd.h>
 #include "wayland_capture.h"
 #endif
 
@@ -383,8 +384,21 @@ void Recorder::launch() {
     if (sysAudio_) sysAudio_->start();
     runTime_.start();
     proc_->start(ffmpegPath(), args);
+    appLog(QString("record: start %1, %2x%3 -> %4x%5 @ %6 fps, %7%8").arg(gst_ ? "Wayland" : "screen")
+               .arg(native_.width()).arg(native_.height()).arg(captureSize(cfg_, native_).width())
+               .arg(captureSize(cfg_, native_).height()).arg(cfg_.fps).arg(encoder_, withAudio ? ", with sound" : ""));
 #if defined(Q_OS_LINUX)
-    if (gst_) gst_->start(QStandardPaths::findExecutable("gst-launch-1.0"), wayland_->gstArgs(waylandOut_, cfg_.fps));
+    if (gst_) {
+        // Jeder GStreamer-Start bekommt eine eigene PipeWire-Verbindung (die alte gehörte dem beendeten Prozess)
+        const int fd = wayland_->openRemote();
+        if (fd < 0) {
+            wayland_->close();  // neue Freigabe-Sitzung holen (mit gemerkter Wahl ohne Dialog)
+            retry_.start(std::min(15000, 1000 * ++fails_));
+        } else {
+            gst_->start(QStandardPaths::findExecutable("gst-launch-1.0"), wayland_->gstArgs(fd, waylandOut_, cfg_.fps));
+            ::close(fd);  // GStreamer hat sie geerbt; endet es, schließt sich die Verbindung mit
+        }
+    }
 #endif
     emit stateChanged();
 }
@@ -436,6 +450,7 @@ void Recorder::checkStall() {
     const bool hadVideo = lastVideo_ >= launchedAt_;
     if (now - (hadVideo ? lastVideo_ : launchedAt_) < (hadVideo ? kStallMs : kFirstFrameMs)) return;
     ++stallRestarts_;
+    appLog(QString("record: no picture for %1 s, restarting").arg((now - (hadVideo ? lastVideo_ : launchedAt_)) / 1000));
     launch();
 }
 
@@ -443,6 +458,8 @@ void Recorder::onFinished() {
     if (!proc_) return;
     const bool quick = runTime_.elapsed() < 5000;
     const QString err = QString::fromUtf8(errTail_).trimmed();
+    appLog(QString("record: ffmpeg ended after %1 s (exit %2)%3").arg(runTime_.elapsed() / 1000)
+               .arg(proc_->exitCode()).arg(err.isEmpty() ? QString() : ": " + err.right(300).simplified()));
     proc_->deleteLater();
     proc_ = nullptr;
     stopGst();

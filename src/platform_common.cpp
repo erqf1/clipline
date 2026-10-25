@@ -1,6 +1,8 @@
 // Plattformunabhängige Teile von platform.h
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
+#include <QFile>
 #include <QDir>
 #include <QFileInfo>
 #include <QApplication>
@@ -34,6 +36,27 @@ QString ffmpegPath() {
 #endif
     const QString p = QStandardPaths::findExecutable("ffmpeg");
     return p.isEmpty() ? name : p;
+}
+
+QString appLogPath() {
+    static const QString path = [] {
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        if (dir.isEmpty()) dir = QDir::tempPath();
+        QDir().mkpath(dir);
+        return QDir(dir).filePath("clipline.log");
+    }();
+    return path;
+}
+
+void appLog(const QString& line) {
+    const QString path = appLogPath();
+    if (QFileInfo(path).size() > 512 * 1024) {
+        QFile::remove(path + ".old");
+        QFile::rename(path, path + ".old");
+    }
+    QFile f(path);
+    if (f.open(QIODevice::Append | QIODevice::Text))
+        f.write((QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz ") + line + '\n').toUtf8());
 }
 
 Monitor findMonitor(const QString& id) {

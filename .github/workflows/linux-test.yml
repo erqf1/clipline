@@ -1,0 +1,44 @@
+name: Linux test
+
+# Startet Clipline unter X11 (Xvfb) und Wayland (Sway ohne Bildschirm, Portal + PipeWire) und prüft
+# Clip-Taste, Clips nach Neustarts der Aufnahme usw. Zum Vergleich läuft dasselbe mit der letzten Version.
+on:
+  push:
+    branches: ['**']
+    paths: ['src/**', 'tests/linux/**', 'CMakeLists.txt', '.github/workflows/linux-test.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        session: [x11, wayland]
+        build: [current, v1.7.0]
+    name: ${{ matrix.session }} (${{ matrix.build }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev libx11-dev libgl1-mesa-dev cmake ninja-build ffmpeg dbus dbus-x11 \
+            xvfb xdotool x11-xserver-utils python3-xlib \
+            sway swaybg wtype xdg-desktop-portal xdg-desktop-portal-wlr pipewire wireplumber \
+            gstreamer1.0-pipewire gstreamer1.0-tools gstreamer1.0-plugins-base
+      - name: Build
+        run: |
+          SRC=.
+          if [ "${{ matrix.build }}" != current ]; then git worktree add -q old "${{ matrix.build }}"; SRC=old; fi
+          cmake -S "$SRC" -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Test
+        run: bash tests/linux/${{ matrix.session }}.sh build/clipline "$RUNNER_TEMP/cl"
+        continue-on-error: ${{ matrix.build != 'current' }}
+      - name: Logs
+        if: always()
+        run: |
+          for f in "$RUNNER_TEMP"/cl/*.log; do echo "===== $f"; tail -n 30 "$f"; done

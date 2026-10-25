@@ -31,6 +31,14 @@ void playSaveSound();   // Clip ist gespeichert
 void playErrorSound();  // Speichern ist gescheitert (Hinweise sieht man im Vollbild-Spiel oft nicht)
 // Linux: Hinweis über den Benachrichtigungsdienst des Desktops (auch ohne Tray, z. B. Hyprland); false = nicht möglich
 bool desktopNotify(const QString& title, const QString& text, int ms, bool warning);
+// Linux: App-ID für Desktop-Datei, Wayland und Portale (Portale verlangen eine ID mit Punkt)
+inline constexpr const char* kLinuxAppId = "win.mert.Clipline";
+
+// ---------------------------------------------------------------- Protokoll
+// Kurzes Protokoll (Aufnahme-Neustarts, Tasten, Fehler) zum Nachsehen, wenn etwas nicht klappt.
+// Liegt im App-Datenordner (Linux: ~/.local/share/WSoftware/Clipline/clipline.log), wird bei 512 KB rotiert.
+void appLog(const QString& line);
+QString appLogPath();
 
 // ---------------------------------------------------------------- Globaler Hotkey
 class GlobalHotkey : public QObject {

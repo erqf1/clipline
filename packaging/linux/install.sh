@@ -7,7 +7,9 @@ mkdir -p "$PREFIX/opt/clipline" "$PREFIX/bin" "$PREFIX/share/applications" "$PRE
 cp "$DIR/clipline" "$PREFIX/opt/clipline/"
 ln -sf "$PREFIX/opt/clipline/clipline" "$PREFIX/bin/clipline"
 cp "$DIR/icon.png" "$PREFIX/share/icons/hicolor/256x256/apps/clipline.png"
-sed "s|^Exec=.*|Exec=$PREFIX/opt/clipline/clipline|" "$DIR/clipline.desktop" > "$PREFIX/share/applications/clipline.desktop"
+# Desktop-Datei heißt wie die App-ID (Portale erkennen Clipline daran); alte Datei von früher entfernen
+sed "s|^Exec=.*|Exec=$PREFIX/opt/clipline/clipline|" "$DIR/win.mert.Clipline.desktop" > "$PREFIX/share/applications/win.mert.Clipline.desktop"
+rm -f "$PREFIX/share/applications/clipline.desktop"
 command -v ffmpeg >/dev/null 2>&1 || echo "Note: please install ffmpeg (e.g. sudo apt install ffmpeg)."
 # Wayland (GNOME, KDE Plasma 6, Hyprland, ...): screen capture goes through the desktop portal + PipeWire
 if [ -n "$WAYLAND_DISPLAY" ] && ! gst-inspect-1.0 --exists pipewiresrc 2>/dev/null; then

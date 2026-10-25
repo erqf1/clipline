@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSysInfo>
 #include <QTabWidget>
 #include "gallery.h"
 #include "platform.h"
@@ -219,7 +220,25 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     return ok ? 0 : 2;
 }
 
+// "--save" = Clip-Knopf 1, "--save 2" = Clip-Knopf 2 …; "--hotkey <Taste>" kommt von Hyprland/Sway (Wayland).
+// Nur an die laufende Instanz weiterreichen - ohne Fenstersystem: Das geht schneller und klappt auch, wenn der
+// Desktop-Befehl kein Display hat (unter Wayland ohne XWayland/Qt-Wayland-Plugin stürzte es sonst ab).
+static int relay(int argc, char* argv[]) {
+    QCoreApplication app(argc, argv);
+    const QStringList args = app.arguments();
+    const int saveAt = args.indexOf("--save"), keyAt = args.indexOf("--hotkey");
+    QByteArray cmd = "save";
+    if (saveAt >= 0) {
+        const int n = saveAt + 1 < args.size() ? args[saveAt + 1].toInt() : 0;
+        if (n > 1) cmd = "save:" + QByteArray::number(n);
+    }
+    if (keyAt >= 0 && keyAt + 1 < args.size()) cmd = "hotkey:" + args[keyAt + 1].toUtf8();
+    return sendToRunning(cmd) ? 0 : 1;  // 1 = nichts läuft, das speichern könnte
+}
+
 int main(int argc, char* argv[]) {
+    for (int i = 1; i < argc; ++i)
+        if (!qstrcmp(argv[i], "--save") || !qstrcmp(argv[i], "--hotkey")) return relay(argc, argv);
 #ifdef Q_OS_WIN
     // Eigene App-ID: eigener Taskleisten-Button, nicht mit anderen Programmen gruppiert
     SetCurrentProcessExplicitAppUserModelID(L"WSoftware.Clipline");
@@ -228,6 +247,9 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName("WSoftware");
     QCoreApplication::setApplicationName("Clipline");
     QGuiApplication::setApplicationDisplayName("Clipline");
+#ifdef Q_OS_LINUX
+    QGuiApplication::setDesktopFileName(kLinuxAppId);  // Wayland-App-ID = Name der Desktop-Datei
+#endif
     app.setWindowIcon(cliplineIcon());
     app.setQuitOnLastWindowClosed(false);
 
@@ -250,20 +272,12 @@ int main(int argc, char* argv[]) {
         return processMicFile(args[mf + 1], args[mf + 2], t) ? 0 : 1;
     }
     const bool background = args.contains("--background");
-    // "--save" = Clip-Knopf 1, "--save 2" = Clip-Knopf 2 …; "--hotkey <Taste>" kommt von Hyprland/Sway (Wayland)
-    const int saveAt = args.indexOf("--save"), keyAt = args.indexOf("--hotkey");
-    const bool save = saveAt >= 0 || keyAt >= 0;
-    QByteArray cmd = background ? "noop" : "show";
-    if (saveAt >= 0) {
-        const int n = saveAt + 1 < args.size() ? args[saveAt + 1].toInt() : 0;
-        cmd = n > 1 ? "save:" + QByteArray::number(n) : QByteArray("save");
-    }
-    if (keyAt >= 0 && keyAt + 1 < args.size()) cmd = "hotkey:" + args[keyAt + 1].toUtf8();
-
     // Nur eine Instanz: weitere Starts reichen ihren Wunsch weiter
-    if (sendToRunning(cmd)) return 0;
-    if (save) return 1;  // nichts läuft, das speichern könnte
+    if (sendToRunning(background ? "noop" : "show")) return 0;
 
+    appLog(QString("start: Clipline %1, %2, session %3, desktop %4").arg(APP_VERSION, QSysInfo::prettyProductName(),
+                                                                        qEnvironmentVariable("XDG_SESSION_TYPE", "?"),
+                                                                        qEnvironmentVariable("XDG_CURRENT_DESKTOP", "?")));
     Config cfg = Config::load();
     setLanguage(cfg.language);
     applyLook(cfg);

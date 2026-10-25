@@ -63,6 +63,13 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     }
 
     connect(&hotkey_, &GlobalHotkey::activated, this, &Controller::saveClip);
+#if defined(Q_OS_LINUX)
+    // Wayland: Das System hat eine Taste abgelehnt oder ohne Taste eingetragen -> sagen, was zu tun ist
+    if (!quiet && WaylandHotkeys::isWayland())
+        connect(&WaylandHotkeys::instance(), &WaylandHotkeys::problem, this, [this](const QString& text) {
+            notify("Clipline", text, QSystemTrayIcon::Warning, 10000);
+        });
+#endif
     connect(&muteHotkey_, &GlobalHotkey::activated, this, &Controller::toggleMute);
     connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);
     // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
@@ -76,6 +83,7 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
     // (Hinweise blendet Windows im Spiel oft aus)
     connect(&rec_, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
+        appLog(QString("save: %1 %2 %3").arg(ok ? "ok" : "FAILED", path, err));
         if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
         if (ok) {
             lastClip_ = path;
@@ -160,6 +168,7 @@ void Controller::registerHotkey() {
                QSystemTrayIcon::Warning, 8000);
     }
     hotkeyOk_ = hotkey_.set(cfg_.hotkey);
+    appLog(QString("hotkey: %1 %2").arg(cfg_.hotkey, hotkeyOk_ ? "set" : "NOT set"));
     if (!hotkeyOk_) {
         const QString key = QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText);
         notify("Clipline",
@@ -242,6 +251,8 @@ void Controller::saveClip() { saveClipButton(0); }
 void Controller::saveClipButton(int i) {
     const QList<ClipButton> buttons = cfg_.allButtons();
     if (i < 0 || i >= buttons.size()) return;
+    appLog(QString("save: clip button %1 (%2 s), buffered %3 s").arg(i + 1).arg(buttons[i].seconds)
+               .arg(rec_.bufferedSeconds(), 0, 'f', 1));
     if (!rec_.wanted()) {
         if (cfg_.sound) playErrorSound();
         notify("Clipline", L("Recording is paused – no clip was saved."), QSystemTrayIcon::Warning, 5000);

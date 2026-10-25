@@ -40,7 +40,8 @@ QList<Monitor> listMonitors() {
 
 bool setAutostart(bool on) {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/autostart";
-    const QString path = dir + "/clipline.desktop";
+    const QString path = dir + "/" + kLinuxAppId + ".desktop";
+    QFile::remove(dir + "/clipline.desktop");  // alter Name (vor der App-ID)
     if (!on) return QFile::remove(path) || !QFile::exists(path);
     QDir().mkpath(dir);
     QFile f(path);
@@ -58,7 +59,7 @@ bool desktopNotify(const QString& title, const QString& text, int ms, bool warni
                                                       "org.freedesktop.Notifications", "Notify");
     QVariantMap hints;
     hints["urgency"] = QVariant::fromValue(uchar(warning ? 2 : 1));
-    hints["desktop-entry"] = QString("clipline");
+    hints["desktop-entry"] = QString(kLinuxAppId);
     msg.setArguments({QString("Clipline"), uint(0), QString("clipline"), title, text, QStringList(), hints, ms});
     QDBusConnection bus = QDBusConnection::sessionBus();
     QDBusConnectionInterface* iface = bus.interface();
@@ -161,24 +162,53 @@ bool GlobalHotkey::set(const QString& sequence) {
     XSync(dpy, False);
     XSetErrorHandler(old);
     if (g_grabFailed) {
+        appLog(QString("hotkey: X11 grab of %1 refused (used by another program)").arg(sequence));
         XCloseDisplay(dpy);
         return false;
     }
+    // Zusätzlich den Tastaturzustand abfragen: Hält ein Programm die ganze Tastatur fest (viele Vollbild-Spiele),
+    // kommt der Grab-Druck nie an - "Clippen klappt nur manchmal". Die Modifikatoren müssen genau passen, wie beim Grab.
+    struct Poll {
+        KeyCode key;
+        KeyCode mod[4][2];
+        bool need[4];
+    } poll{code,
+           {{XKeysymToKeycode(dpy, XK_Control_L), XKeysymToKeycode(dpy, XK_Control_R)},
+            {XKeysymToKeycode(dpy, XK_Alt_L), XKeysymToKeycode(dpy, XK_Alt_R)},
+            {XKeysymToKeycode(dpy, XK_Shift_L), XKeysymToKeycode(dpy, XK_Shift_R)},
+            {XKeysymToKeycode(dpy, XK_Super_L), XKeysymToKeycode(dpy, XK_Super_R)}},
+           {bool(m & Qt::ControlModifier), bool(m & Qt::AltModifier), bool(m & Qt::ShiftModifier), bool(m & Qt::MetaModifier)}};
+    appLog(QString("hotkey: X11 grab %1 (keycode %2)").arg(sequence).arg(code));
     d->stop = false;
     Impl* s = d.get();
-    d->thread = std::thread([this, s, dpy] {
+    d->thread = std::thread([this, s, dpy, poll] {
         const int fd = ConnectionNumber(dpy);
+        auto isDown = [](const char* keys, KeyCode kc) { return kc && (keys[kc / 8] & (1 << (kc % 8))); };
+        bool down = false;  // Kombination gerade gedrückt (nur einmal pro Druck auslösen)
         while (!s->stop) {
+            bool grabbed = false;
             while (XPending(dpy)) {
                 XEvent ev;
                 XNextEvent(dpy, &ev);
-                if (ev.type == KeyPress)
-                    QMetaObject::invokeMethod(this, [this] { emit activated(); }, Qt::QueuedConnection);
+                grabbed |= ev.type == KeyPress;
             }
+            char keys[32];
+            XQueryKeymap(dpy, keys);
+            bool held = isDown(keys, poll.key);
+            for (int g = 0; g < 4 && held; ++g)
+                held = (isDown(keys, poll.mod[g][0]) || isDown(keys, poll.mod[g][1])) == poll.need[g];
+            if ((grabbed || held) && !down) {
+                const bool viaPoll = !grabbed;
+                QMetaObject::invokeMethod(this, [this, viaPoll] {
+                    appLog(QString("hotkey: X11 key pressed (%1)").arg(viaPoll ? "keyboard state" : "grab"));
+                    emit activated();
+                }, Qt::QueuedConnection);
+            }
+            down = held;
             fd_set set;
             FD_ZERO(&set);
             FD_SET(fd, &set);
-            timeval tv{0, 150000};
+            timeval tv{0, 25000};
             select(fd + 1, &set, nullptr, nullptr, &tv);
         }
         XCloseDisplay(dpy);
