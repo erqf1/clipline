@@ -10,6 +10,9 @@ struct Palette {
 };
 Palette makePalette(const QString& accent, bool dark);
 QString styleSheet(const Palette& p);
+// Stil: Standard (bisheriges Aussehen) oder Minimal - gilt für makePalette() und styleSheet()
+void setMinimalLook(bool on);
+bool minimalLook();
 const QList<QColor>& accentChoices();
 
 // Logos + Symbole (mit QPainter gezeichnet)

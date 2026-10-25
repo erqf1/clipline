@@ -29,7 +29,8 @@ struct Config {
     bool micDenoise = true;   // Tastatur-/Mausklicks und Rauschen aus dem Mikrofon entfernen
     QString hotkey = "Ctrl+Alt+S";
     QString muteHotkey = "Ctrl+Alt+M";  // Mikrofon stumm/an, leer = keiner
-    QString accent = "#ff0033";  // YouTube-Rot (frühere Standardfarbe #ff4d6d bleibt für bestehende Nutzer)
+    QString accent = "#ff4d6d";
+    bool minimal = false;     // Stil Minimal statt Standard
     bool dark = true;
     bool autostart = true;
     bool sound = true;

@@ -31,6 +31,7 @@ Config Config::load() {
     c.muteHotkey = s.value("muteHotkey", c.muteHotkey).toString();
     c.accent = s.value("accent", c.accent).toString();
     c.dark = s.value("dark", c.dark).toBool();
+    c.minimal = s.value("minimal", c.minimal).toBool();
     c.autostart = s.value("autostart", c.autostart).toBool();
     c.sound = s.value("sound", c.sound).toBool();
     c.language = s.value("language", c.language).toString();
@@ -94,6 +95,7 @@ void Config::save() const {
     s.setValue("muteHotkey", muteHotkey);
     s.setValue("accent", accent);
     s.setValue("dark", dark);
+    s.setValue("minimal", minimal);
     s.setValue("autostart", autostart);
     s.setValue("sound", sound);
     s.setValue("language", language);

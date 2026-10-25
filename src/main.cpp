@@ -101,6 +101,7 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.autostart = false;
     cfg.firstRunDone = true;
     cfg.language = qEnvironmentVariable("CLIPLINE_LANG", "en");
+    cfg.minimal = qEnvironmentVariableIsSet("CLIPLINE_TESTMINIMAL");
     cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;
     cfg.mic = qEnvironmentVariable("CLIPLINE_TESTMIC");
     if (qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP") > 0) cfg.clipSeconds = qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP");

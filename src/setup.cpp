@@ -79,6 +79,7 @@ static const int kLengths[] = {10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 4
 static constexpr int kLengthCount = int(sizeof(kLengths) / sizeof(kLengths[0]));
 
 void applyLook(const Config& c) {
+    setMinimalLook(c.minimal);
     qApp->setStyleSheet(styleSheet(makePalette(c.accent, c.dark)));
 }
 
@@ -805,6 +806,23 @@ QWidget* ConfigPages::lookPage() {
     ml->addStretch();
     connect(mg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.dark = id == 0; emit lookChanged(); emit changed(); });
     form->addRow(L("Mode"), mode);
+    // Stil: Standard (bisheriges Aussehen) oder Minimal (ruhiger, ohne Rahmen)
+    auto* style = new QWidget;
+    auto* stl = new QHBoxLayout(style);
+    stl->setContentsMargins(0, 0, 0, 0);
+    stl->setSpacing(0);
+    auto* sg = new QButtonGroup(style);
+    for (int i = 0; i < 2; ++i) {
+        auto* b = new QPushButton(i == 0 ? L("Standard") : L("Minimal"));
+        b->setObjectName("seg");
+        b->setCheckable(true);
+        b->setChecked(cfg_.minimal == (i == 1));
+        sg->addButton(b, i);
+        stl->addWidget(b);
+    }
+    stl->addStretch();
+    connect(sg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.minimal = id == 1; emit lookChanged(); emit changed(); });
+    form->addRow(L("Style"), style);
     v->addLayout(form);
     v->addStretch();
     return w;
