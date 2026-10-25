@@ -24,6 +24,9 @@
 #include <QDialog>
 #include <QLabel>
 #include <QListWidget>
+#include <QListView>
+#include <QScrollBar>
+#include <QWheelEvent>
 #include <QVBoxLayout>
 
 // Erststart: Sprache wählen (wie in Cutline)
@@ -174,6 +177,33 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     while (w.elapsed() < 4000) QApplication::processEvents(QEventLoop::AllEvents, 50);
     g->grab().save(dir + "/gallery.png");
     say("gallery saved");
+    // Weiches Scrollen: zwei Rastungen am Mausrad, Position über die Zeit mitschreiben
+    if (auto* lv = g->findChild<QListView*>(); lv && qEnvironmentVariableIsSet("CLIPLINE_TESTSCROLL")) {
+        QScrollBar* sb = lv->verticalScrollBar();
+        say(QString("scroll max=%1 start=%2").arg(sb->maximum()).arg(sb->value()));
+        const QPointF pos(lv->viewport()->width() / 2.0, lv->viewport()->height() / 2.0);
+        for (int k = 0; k < 2; ++k) {
+            QWheelEvent ev(pos, lv->viewport()->mapToGlobal(pos), QPoint(), QPoint(0, -120), Qt::NoButton, Qt::NoModifier,
+                           Qt::NoScrollPhase, false);
+            QApplication::sendEvent(lv->viewport(), &ev);
+        }
+        QElapsedTimer st;
+        st.start();
+        QStringList samples;
+        qint64 paintMs = 0;
+        int paints = 0;
+        while (st.elapsed() < 450) {
+            QApplication::processEvents(QEventLoop::AllEvents, 5);
+            QElapsedTimer pt;
+            pt.start();
+            lv->viewport()->grab();  // ein Frame zeichnen
+            paintMs += pt.elapsed();
+            ++paints;
+            samples << QString("%1:%2").arg(st.elapsed()).arg(sb->value());
+        }
+        say("scroll samples " + samples.join(' '));
+        say(QString("scroll end=%1 frames=%2 avg paint=%3 ms").arg(sb->value()).arg(paints).arg(double(paintMs) / std::max(1, paints), 0, 'f', 2));
+    }
     ctl.quit();
     say("quit done");
     return ok ? 0 : 2;

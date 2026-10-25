@@ -105,16 +105,14 @@ public:
         const QString path = idx.data(kPathRole).toString();
         const ThumbCache::Info& info = thumbs_->get(path);
         const QRectF thumb(card.left() + 1, card.top() + 1, card.width() - 2, (card.width() - 2) * 9.0 / 16.0);
+        // Vorschaubild fertig skaliert und mit runden Ecken aus dem Zwischenspeicher - beim Scrollen wird so nichts
+        // mehr pro Bild neu gerechnet (vorher: jedes Bild in jedem Frame skaliert und weich beschnitten -> Ruckeln)
+        const qreal dpr = p->device() ? p->device()->devicePixelRatioF() : 1.0;
+        p->drawPixmap(thumb.topLeft(), roundedThumb(path, info.pix, thumb.size(), dpr, pal.panel2));
+        const bool opening = opening_->active() && opening_->path == path;
         QPainterPath clip;
         clip.addRoundedRect(thumb, 11, 11);
-        p->setClipPath(clip);
-        p->fillRect(thumb, pal.panel2);
-        if (!info.pix.isNull()) {
-            const QSizeF s = QSizeF(info.pix.size()).scaled(thumb.size(), Qt::KeepAspectRatioByExpanding);
-            p->drawPixmap(QRectF(thumb.center().x() - s.width() / 2, thumb.center().y() - s.height() / 2, s.width(), s.height()),
-                          info.pix, QRectF(info.pix.rect()));
-        }
-        const bool opening = opening_->active() && opening_->path == path;
+        if (hov || opening) p->setClipPath(clip);  // nur für die Kachel unter der Maus
         if (hov && !opening) {  // Abspiel-Symbol beim Überfahren
             p->fillRect(thumb, QColor(0, 0, 0, 70));
             p->setPen(Qt::NoPen);
@@ -180,9 +178,37 @@ public:
     }
 
 private:
+    // Gerundetes Vorschaubild in genau der Kachelgröße; neu nur, wenn sich Bild oder Größe ändern
+    QPixmap roundedThumb(const QString& path, const QPixmap& src, const QSizeF& size, qreal dpr, const QColor& bg) const {
+        const QString key = QString("%1|%2|%3x%4|%5").arg(path).arg(src.cacheKey()).arg(size.width()).arg(size.height()).arg(dpr);
+        auto it = rounded_.constFind(key);
+        if (it != rounded_.constEnd()) return *it;
+        QPixmap pm((size * dpr).toSize());
+        pm.setDevicePixelRatio(dpr);
+        pm.fill(Qt::transparent);
+        QPainter q(&pm);
+        q.setRenderHint(QPainter::Antialiasing);
+        q.setRenderHint(QPainter::SmoothPixmapTransform);
+        const QRectF r(QPointF(0, 0), size);
+        QPainterPath clip;
+        clip.addRoundedRect(r, 11, 11);
+        q.setClipPath(clip);
+        q.fillRect(r, bg);
+        if (!src.isNull()) {
+            const QSizeF s = QSizeF(src.size()).scaled(size, Qt::KeepAspectRatioByExpanding);
+            q.drawPixmap(QRectF(r.center().x() - s.width() / 2, r.center().y() - s.height() / 2, s.width(), s.height()), src,
+                         QRectF(src.rect()));
+        }
+        q.end();
+        if (rounded_.size() > 600) rounded_.clear();  // sehr viele Clips: Speicher begrenzen
+        rounded_.insert(key, pm);
+        return pm;
+    }
+
     ThumbCache* thumbs_;
     Palette pal_;
     const OpeningHint* opening_;
+    mutable QHash<QString, QPixmap> rounded_;
 };
 }  // namespace
 
@@ -256,6 +282,7 @@ GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     view_->setContextMenuPolicy(Qt::CustomContextMenu);
     view_->setModel(&model_);
     view_->setItemDelegate(new TileDelegate(&thumbs_, pal, &opening_, view_));
+    enableSmoothScroll(view_);
     connect(&thumbs_, &ThumbCache::ready, view_->viewport(), qOverload<>(&QWidget::update));
     // Ein Klick öffnet den Clip (Rechtsklick für weitere Aktionen)
     view_->setCursor(Qt::PointingHandCursor);

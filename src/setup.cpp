@@ -760,6 +760,7 @@ QWidget* ConfigPages::hotkeyPage() {
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setStyleSheet("QScrollArea#plain { border: none; background: transparent; }"
                           "QScrollArea#plain > QWidget > QWidget { background: transparent; }");
+    enableSmoothScroll(scroll);
     return scroll;
 }
 

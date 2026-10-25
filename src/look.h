@@ -18,3 +18,7 @@ QIcon cliplineIcon();
 
 enum class Ic { Record, Folder, Gear, Play, Edit, Reveal, Trash, Rename, Pause, Check };
 QIcon icon(Ic id, const QColor& c);
+
+// Mausrad scrollt weich (kurze Animation statt Sprüngen), wie im Browser. Touchpads scrollen schon weich.
+class QAbstractScrollArea;
+void enableSmoothScroll(QAbstractScrollArea* area);

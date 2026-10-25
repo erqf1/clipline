@@ -1,5 +1,10 @@
 #include "look.h"
 
+#include <algorithm>
+#include <QAbstractScrollArea>
+#include <QScrollBar>
+#include <QVariantAnimation>
+#include <QWheelEvent>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -98,6 +103,48 @@ QMessageBox { background: @bg@; }
         .replace("@acctext@", p.accentText.name()).replace("@hover@", p.hover.name());
     return s;
 }
+
+// ---------------------------------------------------------------- Weiches Scrollen
+namespace {
+class SmoothScroller : public QObject {
+public:
+    explicit SmoothScroller(QAbstractScrollArea* area) : QObject(area), area_(area) {
+        anim_.setDuration(280);
+        anim_.setEasingCurve(QEasingCurve::OutCubic);
+        connect(&anim_, &QVariantAnimation::valueChanged, this,
+                [this](const QVariant& v) { area_->verticalScrollBar()->setValue(qRound(v.toDouble())); });
+        // Wer selbst am Balken zieht, übernimmt sofort
+        connect(area->verticalScrollBar(), &QScrollBar::sliderPressed, &anim_, &QVariantAnimation::stop);
+        area->viewport()->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject*, QEvent* e) override {
+        if (e->type() != QEvent::Wheel) return false;
+        auto* w = static_cast<QWheelEvent*>(e);
+        // Touchpad (Pixel-Schritte) und Strg+Rad unverändert lassen
+        if (!w->pixelDelta().isNull() || w->angleDelta().y() == 0 || (w->modifiers() & Qt::ControlModifier)) return false;
+        QScrollBar* sb = area_->verticalScrollBar();
+        if (sb->maximum() <= sb->minimum()) return false;
+        // Während die Animation noch läuft, vom Ziel aus weiterrechnen - schnelles Drehen scrollt weiter
+        const double from = anim_.state() == QAbstractAnimation::Running ? target_ : sb->value();
+        const double step = std::max(80.0, area_->viewport()->height() * 0.2);  // pro Rastung
+        target_ = std::clamp(from - w->angleDelta().y() / 120.0 * step, double(sb->minimum()), double(sb->maximum()));
+        anim_.stop();
+        anim_.setStartValue(double(sb->value()));
+        anim_.setEndValue(target_);
+        anim_.start();
+        return true;
+    }
+
+private:
+    QAbstractScrollArea* area_;
+    QVariantAnimation anim_;
+    double target_ = 0;
+};
+}  // namespace
+
+void enableSmoothScroll(QAbstractScrollArea* area) { new SmoothScroller(area); }
 
 // ---------------------------------------------------------------- Logos
 // Clipline: Koralle -> Violett, weißer Rückspul-Kreis mit Aufnahmepunkt
