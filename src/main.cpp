@@ -102,6 +102,8 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.firstRunDone = true;
     cfg.language = qEnvironmentVariable("CLIPLINE_LANG", "en");
     cfg.minimal = qEnvironmentVariableIsSet("CLIPLINE_TESTMINIMAL");
+    const bool siteShots = qEnvironmentVariableIsSet("CLIPLINE_NOSPIN");  // Bilder für die Website
+    if (siteShots) cfg.autostart = cfg.sound = true;  // nur Anzeige - im Selbsttest wird nichts eingerichtet
     cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;
     cfg.mic = qEnvironmentVariable("CLIPLINE_TESTMIC");
     if (qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP") > 0) cfg.clipSeconds = qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP");
@@ -117,7 +119,9 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
                 .arg(m.rect.width()).arg(m.rect.height()));
     say("mics: " + listMicrophones().join(" | "));
     {
-        SetupWizard wiz(cfg);
+        Config shown = cfg;
+        if (siteShots) shown.clipsDir = "C:/Users/You/Videos/Clipline";
+        SetupWizard wiz(shown);
         auto* stack = wiz.findChild<QStackedWidget*>();
         for (int i = 0; i < 4; ++i) {
             wiz.go(i);
@@ -126,7 +130,9 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         Q_UNUSED(stack);
     }
     {
-        SettingsDialog dlg(cfg);
+        Config shown = cfg;
+        if (siteShots) shown.clipsDir = "C:/Users/You/Videos/Clipline";
+        SettingsDialog dlg(shown);
         auto* tabs = dlg.findChild<QTabWidget*>();
         tabs->setCurrentIndex(1);
         shot(&dlg, "settings");
@@ -174,8 +180,11 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     while (w.elapsed() < 3600) QApplication::processEvents(QEventLoop::AllEvents, 50);
     // Ladekreis beim Öffnen (ohne wirklich einen Player zu starten)
     const QFileInfoList clips = QDir(cfg.clipsDir).entryInfoList({"*.mp4"}, QDir::Files, QDir::Time);
-    if (!clips.isEmpty()) g->showOpening(clips.first().absoluteFilePath());
+    if (!clips.isEmpty() && !qEnvironmentVariableIsSet("CLIPLINE_NOSPIN")) g->showOpening(clips.first().absoluteFilePath());
     while (w.elapsed() < 4000) QApplication::processEvents(QEventLoop::AllEvents, 50);
+    if (siteShots)  // Beispielpfad statt des Testordners
+        for (QLabel* l : g->findChildren<QLabel*>())
+            if (l->text() == QDir::toNativeSeparators(cfg.clipsDir)) l->setText(QDir::toNativeSeparators("C:/Users/You/Videos/Clipline"));
     g->grab().save(dir + "/gallery.png");
     say("gallery saved");
     // Weiches Scrollen: zwei Rastungen am Mausrad, Position über die Zeit mitschreiben
