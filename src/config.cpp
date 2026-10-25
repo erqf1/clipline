@@ -36,6 +36,43 @@ Config Config::load() {
     c.language = s.value("language", c.language).toString();
     c.waylandToken = s.value("waylandToken").toString();
     c.firstRunDone = s.value("firstRunDone", false).toBool();
+    const int n = s.beginReadArray("buttons");
+    for (int i = 0; i < n; ++i) {
+        s.setArrayIndex(i);
+        ClipButton b;
+        b.hotkey = s.value("hotkey").toString();
+        b.seconds = std::clamp(s.value("seconds", b.seconds).toInt(), 5, 1200);
+        b.height = s.value("height", b.height).toInt();
+        b.fps = s.value("fps", b.fps).toInt();
+        b.quality = std::clamp(s.value("quality", b.quality).toInt(), 0, 2);
+        c.extraButtons << b;
+    }
+    s.endArray();
+    return c;
+}
+
+ClipButton Config::mainButton() const { return {hotkey, clipSeconds, height, fps, quality}; }
+
+QList<ClipButton> Config::allButtons() const { return QList<ClipButton>{mainButton()} + extraButtons; }
+
+Config Config::withButton(const ClipButton& b) const {
+    Config c = *this;
+    c.clipSeconds = b.seconds;
+    c.height = b.height;
+    c.fps = b.fps;
+    c.quality = b.quality;
+    return c;
+}
+
+Config Config::recordingConfig() const {
+    Config c = *this;
+    for (const ClipButton& b : extraButtons) {
+        c.clipSeconds = std::max(c.clipSeconds, b.seconds);
+        // 0 = native ist das Höchste
+        if (c.height != 0) c.height = b.height == 0 ? 0 : std::max(c.height, b.height);
+        c.fps = std::max(c.fps, b.fps);
+        c.quality = std::max(c.quality, b.quality);
+    }
     return c;
 }
 
@@ -62,6 +99,18 @@ void Config::save() const {
     s.setValue("language", language);
     s.setValue("waylandToken", waylandToken);
     s.setValue("firstRunDone", firstRunDone);
+    s.remove("buttons");
+    s.beginWriteArray("buttons", int(extraButtons.size()));
+    for (int i = 0; i < extraButtons.size(); ++i) {
+        s.setArrayIndex(i);
+        const ClipButton& b = extraButtons[i];
+        s.setValue("hotkey", b.hotkey);
+        s.setValue("seconds", b.seconds);
+        s.setValue("height", b.height);
+        s.setValue("fps", b.fps);
+        s.setValue("quality", b.quality);
+    }
+    s.endArray();
 }
 
 QSize captureSize(const Config& c, QSize native) {

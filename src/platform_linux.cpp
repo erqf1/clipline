@@ -1,5 +1,13 @@
-// Linux: Bildschirme (Qt/X11), Hotkey (XGrabKey in eigenem Thread), Autostart (~/.config/autostart)
+// Linux: Bildschirme (Qt/X11), Hotkey (XGrabKey in eigenem Thread, unter Wayland über wayland_hotkeys),
+// Autostart (~/.config/autostart), Hinweise (Benachrichtigungsdienst) und Töne
+#include <QApplication>
 #include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDBusConnectionInterface>
+#include <QDBusMessage>
+#include <QFileInfo>
+#include <QProcess>
+#include <QTimer>
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
@@ -9,6 +17,7 @@
 #include <atomic>
 #include <thread>
 #include "platform.h"
+#include "wayland_hotkeys.h"
 
 QList<Monitor> listMonitors() {
     QList<Monitor> out;
@@ -42,6 +51,38 @@ bool setAutostart(bool on) {
     return true;
 }
 
+// ---------------------------------------------------------------- Hinweise und Töne
+// Benachrichtigung über org.freedesktop.Notifications - klappt auch ohne Tray-Leiste (Hyprland, Sway, GNOME)
+bool desktopNotify(const QString& title, const QString& text, int ms, bool warning) {
+    QDBusMessage msg = QDBusMessage::createMethodCall("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                                                      "org.freedesktop.Notifications", "Notify");
+    QVariantMap hints;
+    hints["urgency"] = QVariant::fromValue(uchar(warning ? 2 : 1));
+    hints["desktop-entry"] = QString("clipline");
+    msg.setArguments({QString("Clipline"), uint(0), QString("clipline"), title, text, QStringList(), hints, ms});
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnectionInterface* iface = bus.interface();
+    if (!iface || !iface->isServiceRegistered("org.freedesktop.Notifications").value()) return false;
+    return bus.send(msg);
+}
+
+// Ton über den Sound-Server (beep() ist unter Wayland stumm): canberra, sonst paplay/pw-play mit freedesktop-Klängen
+static void playNamed(const QString& name, const QString& file) {
+    const QString canberra = QStandardPaths::findExecutable("canberra-gtk-play");
+    if (!canberra.isEmpty() && QProcess::startDetached(canberra, {"-i", name})) return;
+    for (const QString& dir : {QString("/usr/share/sounds/freedesktop/stereo/"), QString("/usr/share/sounds/Yaru/stereo/")}) {
+        const QString path = dir + file;
+        if (!QFileInfo::exists(path)) continue;
+        for (const char* player : {"pw-play", "paplay"}) {
+            const QString exe = QStandardPaths::findExecutable(player);
+            if (!exe.isEmpty() && QProcess::startDetached(exe, {path})) return;
+        }
+    }
+    QApplication::beep();
+}
+void playSaveSound() { playNamed("camera-shutter", "camera-shutter.oga"); }
+void playErrorSound() { playNamed("dialog-warning", "dialog-warning.oga"); }
+
 // ---------------------------------------------------------------- Globaler Hotkey
 #ifdef HAVE_X11
 #include <X11/Xlib.h>
@@ -74,12 +115,14 @@ int onXError(Display*, XErrorEvent* e) {
 struct GlobalHotkey::Impl {
     std::thread thread;
     std::atomic<bool> stop{false};
+    bool wayland = false;
 };
 
 GlobalHotkey::GlobalHotkey(QObject* parent) : QObject(parent), d(new Impl) {}
 GlobalHotkey::~GlobalHotkey() { clear(); }
 
 bool GlobalHotkey::supported() {
+    if (WaylandHotkeys::isWayland()) return WaylandHotkeys::instance().available();
     if (qEnvironmentVariableIsEmpty("DISPLAY")) return false;
     Display* dpy = XOpenDisplay(nullptr);
     if (!dpy) return false;
@@ -91,6 +134,11 @@ bool GlobalHotkey::set(const QString& sequence) {
     clear();
     const QKeySequence seq(sequence);
     if (seq.isEmpty()) return false;
+    // Wayland: XWayland bekommt nur Tasten, wenn ein X11-Fenster vorne ist - also über den Compositor/das Portal
+    if (WaylandHotkeys::isWayland()) {
+        d->wayland = WaylandHotkeys::instance().add(this, sequence, description_);
+        return d->wayland;
+    }
     const QKeyCombination kc = seq[0];
     const unsigned long sym = keysymFor(kc.key());
     if (!sym) return false;
@@ -139,14 +187,29 @@ bool GlobalHotkey::set(const QString& sequence) {
 }
 
 void GlobalHotkey::clear() {
+    if (d->wayland) {
+        WaylandHotkeys::instance().remove(this);
+        d->wayland = false;
+    }
     d->stop = true;
     if (d->thread.joinable()) d->thread.join();
 }
 #else
-struct GlobalHotkey::Impl {};
+// Ohne X11 (reiner Wayland-Build): nur der Wayland-Weg
+struct GlobalHotkey::Impl {
+    bool wayland = false;
+};
 GlobalHotkey::GlobalHotkey(QObject* parent) : QObject(parent), d(new Impl) {}
-GlobalHotkey::~GlobalHotkey() = default;
-bool GlobalHotkey::supported() { return false; }
-bool GlobalHotkey::set(const QString&) { return false; }
-void GlobalHotkey::clear() {}
+GlobalHotkey::~GlobalHotkey() { clear(); }
+bool GlobalHotkey::supported() { return WaylandHotkeys::isWayland() && WaylandHotkeys::instance().available(); }
+bool GlobalHotkey::set(const QString& sequence) {
+    clear();
+    if (!WaylandHotkeys::isWayland() || QKeySequence(sequence).isEmpty()) return false;
+    d->wayland = WaylandHotkeys::instance().add(this, sequence, description_);
+    return d->wayland;
+}
+void GlobalHotkey::clear() {
+    if (d->wayland) WaylandHotkeys::instance().remove(this);
+    d->wayland = false;
+}
 #endif

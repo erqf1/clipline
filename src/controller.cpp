@@ -12,6 +12,9 @@
 #include "i18n.h"
 #include "look.h"
 #include "setup.h"
+#if defined(Q_OS_LINUX)
+#include "wayland_hotkeys.h"
+#endif
 
 QString serverName() {
     QString user = qEnvironmentVariable("USERNAME", qEnvironmentVariable("USER", "user"));
@@ -117,6 +120,10 @@ bool Controller::listen() {
 
 void Controller::command(const QByteArray& cmd) {
     if (cmd == "save") saveClip();
+    else if (cmd.startsWith("save:")) saveClipButton(cmd.mid(5).toInt() - 1);  // "clipline --save 2"
+#if defined(Q_OS_LINUX)
+    else if (cmd.startsWith("hotkey:")) WaylandHotkeys::instance().trigger(QString::fromUtf8(cmd.mid(7)));  // Hyprland/Sway
+#endif
     else if (cmd == "show") showGallery();
     else if (cmd == "quit") quit();
 }
@@ -129,7 +136,7 @@ void Controller::applyConfig(const Config& c, bool first) {
     applyLook(cfg_);
     QDir().mkpath(cfg_.clipsDir);
     if (autostartChanged && !quiet) setAutostart(cfg_.autostart);
-    rec_.setConfig(cfg_);
+    rec_.setConfig(cfg_.recordingConfig());  // aufgenommen wird für den anspruchsvollsten Clip-Knopf
     registerHotkey();
     if (gallery_) {  // neu aufbauen, damit Farben/Sprache greifen
         const bool told = toldBackground_;
@@ -144,6 +151,9 @@ void Controller::applyConfig(const Config& c, bool first) {
 void Controller::registerHotkey() {
     if (quiet) return;
     muteHotkey_.clear();
+    extraKeys_.clear();
+    hotkey_.setDescription(L("Save clip"));
+    muteHotkey_.setDescription(L("Mute microphone"));
     if (!cfg_.muteHotkey.isEmpty() && !cfg_.mic.isEmpty() && !muteHotkey_.set(cfg_.muteHotkey)) {
         const QString key = QKeySequence(cfg_.muteHotkey).toString(QKeySequence::NativeText);
         notify("Clipline", L("The hotkey %1 is already used by another program. Choose a different one in the settings.").arg(key),
@@ -157,6 +167,20 @@ void Controller::registerHotkey() {
                               ? L("The hotkey %1 is already used by another program. Choose a different one in the settings.").arg(key)
                               : L("Global hotkeys are not available here. Bind the command \"clipline --save\" to a key in your system settings."),
                           QSystemTrayIcon::Warning, 8000);
+    }
+    // Weitere Clip-Knöpfe: je eine eigene Taste
+    for (int i = 0; i < cfg_.extraButtons.size(); ++i) {
+        const ClipButton& b = cfg_.extraButtons[i];
+        if (b.hotkey.isEmpty()) continue;
+        auto key = std::make_unique<GlobalHotkey>();
+        key->setDescription(L("Save clip %1").arg(i + 2));
+        connect(key.get(), &GlobalHotkey::activated, this, [this, i] { saveClipButton(i + 1); });
+        if (!key->set(b.hotkey) && GlobalHotkey::supported()) {
+            notify("Clipline", L("The hotkey %1 is already used by another program. Choose a different one in the settings.")
+                                   .arg(QKeySequence(b.hotkey).toString(QKeySequence::NativeText)),
+                   QSystemTrayIcon::Warning, 8000);
+        }
+        extraKeys_.push_back(std::move(key));
     }
 }
 
@@ -172,8 +196,26 @@ void Controller::refreshTray() {
     actMute_->setChecked(rec_.micMuted());
     const QString muteKey = QKeySequence(cfg_.muteHotkey).toString(QKeySequence::NativeText);
     actMute_->setText(L("Mute microphone") + (muteKey.isEmpty() ? QString() : QStringLiteral("\t") + muteKey));
-    actSave_->setText(L("Save clip") + "\t" + key);
+    actSave_->setText(L("Save clip") + (cfg_.extraButtons.isEmpty() ? QString() : QString(" (%1)").arg(fmtDuration(cfg_.clipSeconds))) +
+                      "\t" + key);
     actSave_->setEnabled(rec);
+    // Weitere Clip-Knöpfe gleich unter "Clip speichern"
+    for (QAction* a : extraActs_) {
+        menu_.removeAction(a);
+        a->deleteLater();
+    }
+    extraActs_.clear();
+    const QList<QAction*> all = menu_.actions();
+    QAction* before = all.value(all.indexOf(actSave_) + 1);
+    for (int i = 0; i < cfg_.extraButtons.size(); ++i) {
+        const ClipButton& b = cfg_.extraButtons[i];
+        auto* a = new QAction(L("Save clip %1").arg(i + 2) + QString(" (%1)").arg(fmtDuration(b.seconds)) + "\t" +
+                                  QKeySequence(b.hotkey).toString(QKeySequence::NativeText), &menu_);
+        a->setEnabled(rec);
+        connect(a, &QAction::triggered, this, [this, i] { saveClipButton(i + 1); });
+        menu_.insertAction(before, a);
+        extraActs_ << a;
+    }
     if (gallery_) gallery_->updateStatus();
 }
 
@@ -195,13 +237,17 @@ void Controller::galleryClosed() {
     }
 }
 
-void Controller::saveClip() {
+void Controller::saveClip() { saveClipButton(0); }
+
+void Controller::saveClipButton(int i) {
+    const QList<ClipButton> buttons = cfg_.allButtons();
+    if (i < 0 || i >= buttons.size()) return;
     if (!rec_.wanted()) {
         if (cfg_.sound) playErrorSound();
         notify("Clipline", L("Recording is paused – no clip was saved."), QSystemTrayIcon::Warning, 5000);
         return;
     }
-    rec_.saveClip();
+    rec_.saveClip(buttons[i]);
 }
 
 void Controller::togglePause() {
@@ -215,6 +261,7 @@ void Controller::openSettings() {
     settingsOpen_ = true;
     hotkey_.clear();  // sonst fängt der globale Hotkey die Eingabe im Tastenfeld ab
     muteHotkey_.clear();
+    extraKeys_.clear();
     SettingsDialog dlg(cfg_, gallery_);
     if (dlg.exec() == QDialog::Accepted) applyConfig(dlg.config(), false);
     else { applyLook(cfg_); registerHotkey(); }
@@ -238,5 +285,8 @@ void Controller::quit() {
 }
 
 void Controller::notify(const QString& title, const QString& text, QSystemTrayIcon::MessageIcon icon, int ms) {
-    if (!quiet && tray_.isVisible()) tray_.showMessage(title, text, icon, ms);
+    if (quiet) return;
+    // Linux: über den Benachrichtigungsdienst - viele Wayland-Desktops (Hyprland, GNOME) haben kein Tray
+    if (desktopNotify(title, text, ms, icon == QSystemTrayIcon::Warning)) return;
+    if (tray_.isVisible()) tray_.showMessage(title, text, icon, ms);
 }

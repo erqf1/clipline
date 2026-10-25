@@ -197,6 +197,24 @@ double Recorder::bufferedSeconds() const {
     return std::min<double>(cfg_.clipSeconds, (clock_.elapsed() - chunks_.front().t) / 1000.0);
 }
 
+QStringList Recorder::encoderArgs(const QString& enc, qint64 br, bool live) {
+    const QString b = QString::number(br), maxr = QString::number(br * 3 / 2), buf = QString::number(br * 2);
+    if (enc == "h264_nvenc")
+        return live ? QStringList{"-c:v", enc, "-preset", "p4", "-tune", "ll", "-rc", "vbr", "-b:v", b, "-maxrate", maxr, "-bufsize", buf}
+                    : QStringList{"-c:v", enc, "-preset", "p5", "-rc", "vbr", "-b:v", b, "-maxrate", maxr, "-bufsize", buf};
+    if (enc == "h264_amf")
+        // "transcoding": nur so hält AMF das Keyframe-Intervall ein (lowlatency setzt nur einen einzigen IDR).
+        // "balanced" statt "speed": deutlich weniger Blockbildung, für den Hardware-Encoder kaum Mehrlast
+        return {"-c:v", enc, "-usage", "transcoding", "-quality", "balanced", "-rc", "vbr_peak", "-b:v", b,
+                "-maxrate", maxr, "-bufsize", buf};
+    if (enc == "h264_qsv") return {"-c:v", enc, "-preset", live ? "faster" : "medium", "-b:v", b, "-maxrate", maxr, "-bufsize", buf};
+    if (enc == "h264_videotoolbox")
+        return live ? QStringList{"-c:v", enc, "-realtime", "1", "-b:v", b, "-maxrate", maxr, "-bufsize", buf}
+                    : QStringList{"-c:v", enc, "-b:v", b, "-maxrate", maxr, "-bufsize", buf};
+    return live ? QStringList{"-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-b:v", b, "-maxrate", maxr, "-bufsize", buf}
+                : QStringList{"-c:v", "libx264", "-preset", "veryfast", "-b:v", b, "-maxrate", maxr, "-bufsize", buf};
+}
+
 QStringList Recorder::buildArgs(bool withAudio) {
     const Monitor mon = findMonitor(cfg_.monitor);
     QSize native = mon.rect.isEmpty() ? QSize(1920, 1080) : mon.rect.size();
@@ -303,24 +321,9 @@ QStringList Recorder::buildArgs(bool withAudio) {
     a << "-filter_complex" << fc.join(";") << "-map" << "[v]";
     if (!amap.isEmpty()) a << "-map" << amap;
 
-    const qint64 br = qint64(videoBitrate(cfg_, native));
-    const QString b = QString::number(br), maxr = QString::number(br * 3 / 2), buf = QString::number(br * 2);
+    native_ = native;
+    a << encoderArgs(encoder_, qint64(videoBitrate(cfg_, native)), true);
     const QString gop = fps;  // ein Keyframe pro Sekunde -> Clips starten genau
-    if (encoder_ == "h264_nvenc")
-        a << "-c:v" << encoder_ << "-preset" << "p4" << "-tune" << "ll" << "-rc" << "vbr" << "-b:v" << b << "-maxrate" << maxr
-          << "-bufsize" << buf;
-    else if (encoder_ == "h264_amf")
-        // "transcoding": nur so hält AMF das Keyframe-Intervall ein (lowlatency setzt nur einen einzigen IDR).
-        // "balanced" statt "speed": deutlich weniger Blockbildung, für den Hardware-Encoder kaum Mehrlast
-        a << "-c:v" << encoder_ << "-usage" << "transcoding" << "-quality" << "balanced" << "-rc" << "vbr_peak" << "-b:v" << b
-          << "-maxrate" << maxr << "-bufsize" << buf;
-    else if (encoder_ == "h264_qsv")
-        a << "-c:v" << encoder_ << "-preset" << "faster" << "-b:v" << b << "-maxrate" << maxr << "-bufsize" << buf;
-    else if (encoder_ == "h264_videotoolbox")
-        a << "-c:v" << encoder_ << "-realtime" << "1" << "-b:v" << b << "-maxrate" << maxr << "-bufsize" << buf;
-    else
-        a << "-c:v" << "libx264" << "-preset" << "superfast" << "-tune" << "zerolatency" << "-b:v" << b << "-maxrate"
-          << maxr << "-bufsize" << buf;
     // Keyframe jede Sekunde und SPS/PPS vor jedem Paket -> jeder Ausschnitt aus dem Puffer ist abspielbar.
     // Nicht nur "freq=keyframe": AMF markiert die erzwungenen Keyframes nicht immer als solche, dann fehlten
     // SPS/PPS im Puffer, sobald der Anfang der Aufnahme herausgefallen ist ("non-existing PPS", leerer Clip).
@@ -471,14 +474,16 @@ void Recorder::onFinished() {
     retry_.start(std::min(15000, 500 * fails_ * fails_));
 }
 
-void Recorder::saveClip() {
+void Recorder::saveClip(const ClipButton& button) {
+    // Nie mehr als aufgenommen wird (die Aufnahme hält die Länge des längsten Knopfs)
+    const int secs = std::clamp(button.seconds, 1, cfg_.clipSeconds);
     // Ohne ein einziges Bild seit dem (Neu-)Start wird ffmpeg den Clip nicht schreiben können
     if (chunks_.empty() || total_ < kTsPacket * 50 || lastVideo_ < launchedAt_) {
         emit clipSaved(QString(), false, L("Nothing recorded yet."));
         return;
     }
     // Ausschnitt: Cliplänge + 3 s Reserve (ffmpeg schneidet später genau auf die Länge)
-    const qint64 from = clock_.elapsed() - qint64(cfg_.clipSeconds + 3) * 1000;
+    const qint64 from = clock_.elapsed() - qint64(secs + 3) * 1000;
     size_t first = 0;
     while (first + 1 < chunks_.size() && chunks_[first].t < from) ++first;
     const qint64 start = (chunks_[first].off + kTsPacket - 1) / kTsPacket * kTsPacket;
@@ -513,9 +518,35 @@ void Recorder::saveClip() {
     QString out = QDir(cfg_.clipsDir).filePath(base + ".mp4");
     for (int n = 2; QFileInfo::exists(out); ++n) out = QDir(cfg_.clipsDir).filePath(QString("%1 (%2).mp4").arg(base).arg(n));
 
-    const QString tsPath = tmp->fileName();
-    const int secs = cfg_.clipSeconds;
     const bool wantAudio = (cfg_.systemAudio && systemAudioSupported()) || !cfg_.mic.isEmpty();
+
+    // Weniger Auflösung, Bildrate oder Qualität als die Aufnahme: neu kodieren, sonst nur umpacken
+    const Config target = cfg_.withButton(button);
+    const QSize outSize = captureSize(target, native_);
+    const bool reencode = outSize != captureSize(cfg_, native_) || button.fps < cfg_.fps || button.quality < cfg_.quality;
+    if (!reencode) return copyClip(tmp, out, secs, wantAudio);
+    QStringList args = {"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-sseof", QString("-%1").arg(secs),
+                        "-i", tmp->fileName(), "-map", "0:v:0", "-map", "0:a?", "-vf",
+                        QString("scale=%1:%2:flags=bicubic,fps=%3,format=%4").arg(outSize.width()).arg(outSize.height())
+                            .arg(std::min(button.fps, cfg_.fps)).arg(encoder_ == "libx264" ? "yuv420p" : "nv12")};
+    args << encoderArgs(encoder_, qint64(videoBitrate(target, native_)), false);
+    args << "-g" << QString::number(std::min(button.fps, cfg_.fps)) << "-c:a" << "copy" << "-avoid_negative_ts" << "make_zero"
+         << "-movflags" << "+faststart" << out;
+    runFfmpeg(args, [this, tmp, out, secs, wantAudio](bool ok, const QByteArray&, const QString&) {
+        if (ok && QFileInfo(out).size() > 1024) {
+            tmp->deleteLater();
+            verifyClip(out, secs, wantAudio);
+            return;
+        }
+        // Umrechnen ging schief (z. B. Encoder belegt): dann lieber in Aufnahmequalität speichern als gar nicht
+        QFile::remove(out);
+        copyClip(tmp, out, secs, wantAudio);
+    });
+}
+
+// Ausschnitt ohne Neukodierung in eine MP4 umpacken (genau die letzten secs Sekunden)
+void Recorder::copyClip(QTemporaryFile* tmp, const QString& out, int secs, bool wantAudio) {
+    const QString tsPath = tmp->fileName();
     runFfmpeg({"-hide_banner", "-loglevel", "error", "-y", "-probesize", "32M", "-sseof", QString("-%1").arg(secs), "-i", tsPath,
                "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", out},
               [this, tmp, out, tsPath, secs, wantAudio](bool ok, const QByteArray&, const QString& err) {

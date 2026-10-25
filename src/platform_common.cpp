@@ -113,9 +113,15 @@ bool systemAudioSupported() {
 #endif
 }
 
+#ifdef Q_OS_MAC
 void playSaveSound() { QApplication::beep(); }
 void playErrorSound() {
     QApplication::beep();
     QTimer::singleShot(220, [] { QApplication::beep(); });
 }
+#endif
+#endif
+
+#ifndef Q_OS_LINUX
+bool desktopNotify(const QString&, const QString&, int, bool) { return false; }  // Windows/macOS: Tray-Hinweise
 #endif

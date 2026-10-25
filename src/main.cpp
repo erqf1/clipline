@@ -101,6 +101,9 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;
     cfg.mic = qEnvironmentVariable("CLIPLINE_TESTMIC");
     if (qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP") > 0) cfg.clipSeconds = qEnvironmentVariableIntValue("CLIPLINE_TESTCLIP");
+    // Zweiter Clip-Knopf (6 s, kleinere Auflösung): wird nach dem ersten Clip auch gespeichert
+    const int extraH = qEnvironmentVariableIntValue("CLIPLINE_TESTBUTTON");
+    if (extraH > 0) cfg.extraButtons << ClipButton{QString(), 6, extraH, 30, 0};
     setLanguage(cfg.language);
     applyLook(cfg);
     say("ffmpeg: " + ffmpegPath());
@@ -149,6 +152,14 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         }
     }
     say(QString("clip ok=%1 path=%2 size=%3").arg(ok).arg(clip).arg(QFileInfo(clip).size()));
+    if (!cfg.extraButtons.isEmpty() && secs > 0) {
+        done = false;
+        ctl.saveClipButton(1);
+        QElapsedTimer t2;
+        t2.start();
+        while (!done && t2.elapsed() < 60000) QApplication::processEvents(QEventLoop::AllEvents, 50);
+        say(QString("clip2 ok=%1 path=%2 size=%3").arg(ok).arg(clip).arg(QFileInfo(clip).size()));
+    }
     say(QString("stall restarts: %1").arg(ctl.recorder().stallRestarts()));
     ctl.showGallery();
     GalleryWindow* g = ctl.gallery();
@@ -199,10 +210,18 @@ int main(int argc, char* argv[]) {
         return processMicFile(args[mf + 1], args[mf + 2], t) ? 0 : 1;
     }
     const bool background = args.contains("--background");
-    const bool save = args.contains("--save");
+    // "--save" = Clip-Knopf 1, "--save 2" = Clip-Knopf 2 …; "--hotkey <Taste>" kommt von Hyprland/Sway (Wayland)
+    const int saveAt = args.indexOf("--save"), keyAt = args.indexOf("--hotkey");
+    const bool save = saveAt >= 0 || keyAt >= 0;
+    QByteArray cmd = background ? "noop" : "show";
+    if (saveAt >= 0) {
+        const int n = saveAt + 1 < args.size() ? args[saveAt + 1].toInt() : 0;
+        cmd = n > 1 ? "save:" + QByteArray::number(n) : QByteArray("save");
+    }
+    if (keyAt >= 0 && keyAt + 1 < args.size()) cmd = "hotkey:" + args[keyAt + 1].toUtf8();
 
     // Nur eine Instanz: weitere Starts reichen ihren Wunsch weiter
-    if (sendToRunning(save ? "save" : background ? "noop" : "show")) return 0;
+    if (sendToRunning(cmd)) return 0;
     if (save) return 1;  // nichts läuft, das speichern könnte
 
     Config cfg = Config::load();

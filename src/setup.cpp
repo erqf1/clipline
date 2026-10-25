@@ -310,17 +310,128 @@ QSize ConfigPages::nativeSize() const {
 
 void ConfigPages::updateRam() {
     const QSize n = nativeSize();
-    const QSize s = captureSize(cfg_, n);
-    const double total = estimateTotalMB(cfg_, n), buf = estimateBufferMB(cfg_, n);
+    // Aufgenommen wird für den anspruchsvollsten Clip-Knopf - danach richtet sich der Arbeitsspeicher
+    const Config rec = cfg_.recordingConfig();
+    const QSize s = captureSize(cfg_, n), rs = captureSize(rec, n);
+    const double total = estimateTotalMB(rec, n), buf = estimateBufferMB(rec, n);
     if (ramLabel_) ramLabel_->setText("≈ " + fmtMB(total));
     if (ramBar_) ramBar_->setValue(int(std::min(2048.0, total)));
     if (diskLabel_) diskLabel_->setText("≈ " + fmtMB(estimateClipMB(cfg_, n)));
     if (ramDetail_)
         ramDetail_->setText(QString("%1 %2 · %3×%4 · %5 fps · %6 Mbit/s")
-                                .arg(L("buffer")).arg(fmtMB(buf)).arg(s.width()).arg(s.height()).arg(cfg_.fps)
-                                .arg(videoBitrate(cfg_, n) / 1e6, 0, 'f', 1));
+                                .arg(L("buffer")).arg(fmtMB(buf)).arg(rs.width()).arg(rs.height()).arg(rec.fps)
+                                .arg(videoBitrate(rec, n) / 1e6, 0, 'f', 1));
+    if (multiNote_) multiNote_->setVisible(!cfg_.extraButtons.isEmpty());
     if (lenLabel_) lenLabel_->setText(fmtDuration(cfg_.clipSeconds));
     if (preview_) preview_->setCaptureHeight(s.height(), n.height());
+}
+
+// Taste, die noch kein Knopf hat (für einen neuen Clip-Knopf)
+static QString freeHotkey(const Config& c) {
+    QStringList used = {c.hotkey, c.muteHotkey};
+    for (const ClipButton& b : c.extraButtons) used << b.hotkey;
+    for (const char* k : {"Ctrl+Alt+D", "Ctrl+Alt+F", "Ctrl+Alt+G", "Ctrl+Alt+H", "Ctrl+Alt+J", "Ctrl+Alt+K"})
+        if (!used.contains(k)) return k;
+    return QString();
+}
+
+void ConfigPages::checkDuplicates() {
+    if (!dupWarn_) return;
+    QStringList keys = {cfg_.hotkey};
+    for (const ClipButton& b : cfg_.extraButtons) keys << b.hotkey;
+    keys.removeAll(QString());
+    bool dup = false;
+    for (int i = 0; i < keys.size(); ++i) dup |= keys.indexOf(keys[i], i + 1) >= 0;
+    dupWarn_->setVisible(dup);
+}
+
+// Karte für Clip-Knopf i+2: Taste, Länge, Auflösung, Bildrate, Detail - und Entfernen
+QWidget* ConfigPages::extraCard(int i) {
+    auto* card = new QFrame;
+    card->setObjectName("card");
+    auto* cv = new QVBoxLayout(card);
+    cv->setContentsMargins(16, 12, 16, 14);
+    cv->setSpacing(8);
+    auto* head = new QHBoxLayout;
+    head->addWidget(label("<b>" + L("Clip button %1").arg(i + 2) + "</b>"));
+    head->addStretch();
+    auto* del = new QPushButton(icon(Ic::Trash, makePalette(cfg_.accent, cfg_.dark).muted), QString());
+    del->setObjectName("flat");
+    del->setToolTip(L("Delete"));
+    del->setCursor(Qt::PointingHandCursor);
+    head->addWidget(del);
+    cv->addLayout(head);
+    const ClipButton b = cfg_.extraButtons[i];
+    auto* key = new HotkeyButton(b.hotkey);
+    key->setMinimumHeight(42);
+    cv->addWidget(key);
+    auto* form = new QFormLayout;
+    form->setSpacing(8);
+    auto* len = new QComboBox;
+    for (int k = 0; k < kLengthCount; ++k) len->addItem(fmtDuration(kLengths[k]), kLengths[k]);
+    len->setCurrentIndex(std::max(0, len->findData(b.seconds)));
+    auto* res = new QComboBox;
+    const QSize n = nativeSize();
+    res->addItem(QString("%1 (%2p)").arg(L("Native")).arg(n.height()), 0);
+    for (int h : {2160, 1440, 1080, 900, 720, 480, 360})
+        if (h < n.height()) res->addItem(QString("%1p").arg(h), h);
+    res->setCurrentIndex(std::max(0, res->findData(b.height)));
+    auto* fps = new QComboBox;
+    const double hz = findMonitor(cfg_.monitor).refresh;
+    for (int f : {30, 60, 120, 144})
+        if (f <= std::max(60.0, hz + 1)) fps->addItem(QString("%1 fps").arg(f), f);
+    fps->setCurrentIndex(std::max(0, fps->findData(b.fps)));
+    auto* seg = new QWidget;
+    auto* sl = new QHBoxLayout(seg);
+    sl->setContentsMargins(0, 0, 0, 0);
+    sl->setSpacing(0);
+    auto* group = new QButtonGroup(seg);
+    const char* names[3] = {"Small", "Balanced", "High"};
+    for (int q = 0; q < 3; ++q) {
+        auto* qb = new QPushButton(L(names[q]));
+        qb->setObjectName("seg");
+        qb->setCheckable(true);
+        qb->setChecked(b.quality == q);
+        group->addButton(qb, q);
+        sl->addWidget(qb);
+    }
+    sl->addStretch();
+    form->addRow(L("Clip length"), len);
+    form->addRow(L("Resolution"), res);
+    form->addRow(L("Frame rate"), fps);
+    form->addRow(L("Detail"), seg);
+    cv->addLayout(form);
+
+    auto edit = [this, i](std::function<void(ClipButton&)> fn) {
+        if (i >= cfg_.extraButtons.size()) return;
+        fn(cfg_.extraButtons[i]);
+        updateRam();
+        checkDuplicates();
+        emit changed();
+    };
+    connect(key, &HotkeyButton::sequenceChanged, this, [edit](const QString& s) { edit([s](ClipButton& c) { c.hotkey = s; }); });
+    connect(len, &QComboBox::currentIndexChanged, this, [edit, len] { const int v = len->currentData().toInt(); edit([v](ClipButton& c) { c.seconds = v; }); });
+    connect(res, &QComboBox::currentIndexChanged, this, [edit, res] { const int v = res->currentData().toInt(); edit([v](ClipButton& c) { c.height = v; }); });
+    connect(fps, &QComboBox::currentIndexChanged, this, [edit, fps] { const int v = fps->currentData().toInt(); edit([v](ClipButton& c) { c.fps = v; }); });
+    connect(group, &QButtonGroup::idClicked, this, [edit](int q) { edit([q](ClipButton& c) { c.quality = q; }); });
+    connect(del, &QPushButton::clicked, this, [this, i] {
+        if (i >= cfg_.extraButtons.size()) return;
+        cfg_.extraButtons.removeAt(i);
+        QTimer::singleShot(0, this, [this] { rebuildExtras(); });  // nicht im Klick des Knopfs selbst löschen
+        updateRam();
+        emit changed();
+    });
+    return card;
+}
+
+void ConfigPages::rebuildExtras() {
+    if (!extrasBox_) return;
+    while (QLayoutItem* it = extrasBox_->takeAt(0)) {
+        if (it->widget()) it->widget()->deleteLater();
+        delete it;
+    }
+    for (int i = 0; i < cfg_.extraButtons.size(); ++i) extrasBox_->addWidget(extraCard(i));
+    checkDuplicates();
 }
 
 // 1: Ordner + Sprache
@@ -464,6 +575,8 @@ QWidget* ConfigPages::recordingPage() {
     bv->addLayout(disk);
     ramDetail_ = label(QString(), "muted");
     bv->addWidget(ramDetail_);
+    multiNote_ = label(L("With several clip buttons Clipline records for the most demanding one; clips with less are scaled down when saved."), "muted");
+    bv->addWidget(multiNote_);
     v->addWidget(box);
 
     connect(screen, &QComboBox::currentIndexChanged, this, [this, screen, fillRes] {
@@ -487,8 +600,36 @@ QWidget* ConfigPages::hotkeyPage() {
     v->addWidget(label(L("Click the button and press the combination you want. Works everywhere, even in games."), "muted"));
     v->addSpacing(6);
     auto* key = new HotkeyButton(cfg_.hotkey);
-    connect(key, &HotkeyButton::sequenceChanged, this, [this](const QString& s) { cfg_.hotkey = s; emit changed(); });
+    connect(key, &HotkeyButton::sequenceChanged, this, [this](const QString& s) { cfg_.hotkey = s; checkDuplicates(); emit changed(); });
     v->addWidget(key);
+
+    // Mehrere Clip-Knöpfe: unter dem ersten ein "+", jeder weitere mit eigener Taste, Länge und Grafik
+    extrasBox_ = new QVBoxLayout;
+    extrasBox_->setSpacing(10);
+    v->addLayout(extrasBox_);
+    rebuildExtras();
+    auto* add = new QPushButton("+   " + L("Add another clip button"));
+    add->setObjectName("dashed");
+    add->setCursor(Qt::PointingHandCursor);
+    connect(add, &QPushButton::clicked, this, [this] {
+        ClipButton b;
+        b.hotkey = freeHotkey(cfg_);
+        b.seconds = 30;
+        b.height = cfg_.height;
+        b.fps = cfg_.fps;
+        b.quality = cfg_.quality;
+        cfg_.extraButtons << b;
+        rebuildExtras();
+        updateRam();
+        emit changed();
+    });
+    v->addWidget(add);
+    v->addWidget(label(L("Several clip buttons: e.g. one for short clips in full quality and one for long clips in lower quality. "
+                         "Each has its own key."), "muted"));
+    dupWarn_ = label(L("Two clip buttons use the same key."));
+    dupWarn_->setStyleSheet(QString("color:%1;font-weight:600;").arg(makePalette(cfg_.accent, cfg_.dark).accent.name()));
+    v->addWidget(dupWarn_);
+    checkDuplicates();
     v->addSpacing(14);
 
     // Regler mit Titel und Prozentangabe (Lautstärken 0..200 %)

@@ -5,6 +5,7 @@ Save the last moments of your screen with one key. Clipline records quietly in t
 - **Runs in the background.** Starts with your computer, sits in the tray and uses the graphics card to record (NVIDIA, AMD, Intel, Apple). About 5 % of one CPU core at 1080p60 on a typical PC.
 - **Clips from memory.** The last 10 s to 10 min are kept in RAM, nothing touches your disk until you save. The setup shows you the estimated RAM use before you start.
 - **One key.** `Ctrl+Alt+S` (configurable) saves the clip as an MP4 in your folder, with system sound and optionally your microphone.
+- **As many clip buttons as you like.** Add more under the first one ("+"): each has its own key, clip length, resolution, frame rate and quality – e.g. 30 s in full quality on one key and 5 min in 720p on another.
 - **Clip gallery.** Open Clipline to see all clips with previews – one click plays a clip.
 - **12 languages**: Deutsch, English, Español, Français, Italiano, Português, Nederlands, Polski, Türkçe, Русский, 日本語, 中文.
 - **Your way.** Clips folder anywhere, clip length slider with live RAM estimate, resolution from native down to 360p with a pixel preview, frame rate, quality, your own hotkey, accent colour, dark or light – all set on first start and changeable later.
@@ -26,7 +27,7 @@ Get the latest build from the [Releases page](../../releases/latest):
 ### Platform notes
 
 - **Windows:** full support – screen via Desktop Duplication, system sound via WASAPI loopback.
-- **Linux:** X11 sessions. System sound via PulseAudio/PipeWire. On Wayland, screen capture and global hotkeys are limited; bind `clipline --save` to a key in your desktop's shortcut settings.
+- **Linux:** X11 and Wayland. System sound via PulseAudio/PipeWire. On Wayland the screen is captured through the desktop portal (asks once), and the clip keys work everywhere: on Hyprland and Sway Clipline registers them itself, on KDE Plasma and GNOME 48+ through the desktop's shortcut portal (asks once). On other compositors bind `clipline --save` (or `clipline --save 2` for clip button 2) to a key. Notifications and sounds use the desktop's notification service, so they also work without a tray.
 - **macOS:** allow *Screen Recording* in System Settings → Privacy on first start. macOS does not allow recording system sound without a virtual audio device (e.g. BlackHole, selectable as microphone). Builds are not notarized: right-click → Open the first time.
 
 ## Command line
@@ -36,6 +37,7 @@ Get the latest build from the [Releases page](../../releases/latest):
 | `clipline` | Start, or show the gallery if already running |
 | `clipline --background` | Start in the tray only (used by autostart) |
 | `clipline --save` | Save a clip in the running instance |
+| `clipline --save 2` | Save a clip with clip button 2 (3, 4, …) |
 
 ## Build from source
 

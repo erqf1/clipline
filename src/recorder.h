@@ -2,6 +2,7 @@
 #include <QElapsedTimer>
 #include <QObject>
 #include <QProcess>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <deque>
 #include <functional>
@@ -19,7 +20,7 @@ public:
     explicit Recorder(QObject* parent = nullptr);
     ~Recorder() override;
 
-    void setConfig(const Config& c);  // startet bei geänderten Aufnahmeparametern neu
+    void setConfig(const Config& c);  // Aufnahme-Einstellungen (Config::recordingConfig); startet bei Änderungen neu
     void setMicMuted(bool muted);
     bool micMuted() const { return micMuted_; }
     void start();
@@ -30,9 +31,12 @@ public:
     qint64 bufferedBytes() const { return total_ - (chunks_.empty() ? total_ : chunks_.front().off); }
     QString encoder() const { return encoder_; }
     int stallRestarts() const { return stallRestarts_; }
-    void saveClip();
+    // Letzte b.seconds speichern; hat der Knopf weniger Auflösung/Bildrate/Qualität als die Aufnahme, wird umgerechnet
+    void saveClip(const ClipButton& b);
 
     static QString detectEncoder(bool forceRecheck = false);
+    // Encoder-Optionen für eine Bitrate (live = Aufnahme mit geringer Verzögerung, sonst Umrechnen eines Clips)
+    static QStringList encoderArgs(const QString& enc, qint64 bitrate, bool live);
 
 signals:
     void stateChanged();
@@ -55,6 +59,7 @@ private:
     void checkStall();
     void runFfmpeg(const QStringList& args, std::function<void(bool ok, const QByteArray& out, const QString& err)> done);
     void verifyClip(const QString& out, int secs, bool wantAudio);
+    void copyClip(QTemporaryFile* tmp, const QString& out, int secs, bool wantAudio);
     bool captureChanged(const Config& a, const Config& b) const;
     MicTuning tuning() const;
     bool startWayland();  // false = Portal-Dialog läuft noch / nicht möglich
@@ -66,6 +71,7 @@ private:
     QProcess* gst_ = nullptr;          // Linux/Wayland: GStreamer liefert die Bilder an ffmpeg
     WaylandCapture* wayland_ = nullptr;
     QSize waylandOut_;                 // Bildgröße, die GStreamer liefert
+    QSize native_ = QSize(1920, 1080); // Bildschirmgröße der laufenden Aufnahme
     void stopGst();
     std::unique_ptr<SystemAudioPipe> sysAudio_;
     std::deque<Chunk> chunks_;

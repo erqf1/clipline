@@ -29,6 +29,8 @@ QString ffmpegPath();
 void revealInFolder(const QString& path);
 void playSaveSound();   // Clip ist gespeichert
 void playErrorSound();  // Speichern ist gescheitert (Hinweise sieht man im Vollbild-Spiel oft nicht)
+// Linux: Hinweis über den Benachrichtigungsdienst des Desktops (auch ohne Tray, z. B. Hyprland); false = nicht möglich
+bool desktopNotify(const QString& title, const QString& text, int ms, bool warning);
 
 // ---------------------------------------------------------------- Globaler Hotkey
 class GlobalHotkey : public QObject {
@@ -39,6 +41,7 @@ public:
     bool set(const QString& sequence);  // false = belegt oder nicht unterstützt
     void clear();
     static bool supported();
+    void setDescription(const QString& text) { description_ = text; }  // Wayland-Portal zeigt das beim Einrichten
 
 signals:
     void activated();
@@ -46,6 +49,7 @@ signals:
 private:
     struct Impl;
     std::unique_ptr<Impl> d;
+    QString description_;
 };
 
 // ---------------------------------------------------------------- Ton-Mischer (nur Windows: WASAPI)

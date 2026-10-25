@@ -4,6 +4,8 @@
 #include <QMenu>
 #include <QPointer>
 #include <QSystemTrayIcon>
+#include <memory>
+#include <vector>
 #include "config.h"
 #include "platform.h"
 #include "recorder.h"
@@ -29,7 +31,8 @@ signals:
 
 public slots:
     void showGallery();
-    void saveClip();
+    void saveClip();             // Clip-Knopf 1
+    void saveClipButton(int i);  // 0 = Knopf 1, 1 = Knopf 2 …
     void openSettings();
     void togglePause();
     void toggleMute();
@@ -47,9 +50,11 @@ private:
     Config cfg_;
     Recorder rec_;
     GlobalHotkey hotkey_, muteHotkey_;
+    std::vector<std::unique_ptr<GlobalHotkey>> extraKeys_;  // Clip-Knopf 2, 3, …
     QMenu menu_;  // vor tray_: muss länger leben als das Tray-Symbol
     QSystemTrayIcon tray_;
     QAction *actSave_, *actPause_, *actMute_;
+    QList<QAction*> extraActs_;  // "Clip 2 speichern" … im Tray-Menü
     QPointer<GalleryWindow> gallery_;
     QLocalServer server_;
     bool toldBackground_ = false, hotkeyOk_ = true, settingsOpen_ = false;

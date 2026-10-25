@@ -6,7 +6,7 @@
 
 // Farben + Stylesheet (Akzentfarbe und Hell/Dunkel sind einstellbar)
 struct Palette {
-    QColor bg, panel, panel2, border, text, muted, accent, accentText;
+    QColor bg, panel, panel2, border, text, muted, accent, accentText, hover;
 };
 Palette makePalette(const QString& accent, bool dark);
 QString styleSheet(const Palette& p);

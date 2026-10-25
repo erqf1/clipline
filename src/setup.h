@@ -11,6 +11,7 @@
 #include <QSlider>
 #include <QStackedWidget>
 #include <QTimer>
+#include <QVBoxLayout>
 #include "config.h"
 #include "platform.h"
 
@@ -103,8 +104,14 @@ signals:
 private:
     void updateRam();
     QSize nativeSize() const;
+    void rebuildExtras();     // Karten für Clip-Knopf 2, 3, … neu aufbauen
+    QWidget* extraCard(int i);
+    void checkDuplicates();   // zwei Knöpfe mit derselben Taste?
 
     Config cfg_;
+    QVBoxLayout* extrasBox_ = nullptr;
+    QLabel* dupWarn_ = nullptr;
+    QLabel* multiNote_ = nullptr;  // Hinweis auf der Qualitätsseite, wenn es mehrere Knöpfe gibt
     QList<Monitor> monitors_;
     QLabel *ramLabel_ = nullptr, *ramDetail_ = nullptr, *lenLabel_ = nullptr, *diskLabel_ = nullptr;
     QProgressBar* ramBar_ = nullptr;
