@@ -34,6 +34,8 @@ dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSI
 sleep 1
 /usr/libexec/xdg-desktop-portal -r -v > "$OUT/xdp.log" 2>&1 &
 sleep 2
+swaymsg -t get_outputs | grep -E '"name"|"active"|"current_mode"' -A0 | head -5
+grim "$OUT/shot.png" && echo "screencopy works (grim)" || echo "screencopy does NOT work here (grim failed)"
 # Bewegung auf dem Bildschirm
 (while true; do swaymsg -q output HEADLESS-1 bg "#$(printf '%06x' $((RANDOM * 500)))" solid_color; sleep 0.25; done) &
 
@@ -62,7 +64,9 @@ sleep 3
 press
 check "hotkey after sway reload" 5
 
-echo "----- portal (wlr) tail"
-tail -n 25 "$OUT/xdpw.log"
+echo "----- PipeWire: dieselbe Verbindung für einen zweiten GStreamer-Start?"
+python3 "$DIR/pwreuse.py"
+echo "----- portal (wlr) head"
+head -n 40 "$OUT/xdpw.log"
 finish
 exit $FAILS

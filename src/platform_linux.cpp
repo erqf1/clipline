@@ -19,6 +19,8 @@
 #include "platform.h"
 #include "wayland_hotkeys.h"
 
+static QRect x11RootRect();  // X11: ganzer Bildschirm in Pixeln, leer = kein X11
+
 QList<Monitor> listMonitors() {
     QList<Monitor> out;
     const auto screens = QGuiApplication::screens();
@@ -35,6 +37,13 @@ QList<Monitor> listMonitors() {
         out << m;
     }
     std::stable_sort(out.begin(), out.end(), [](const Monitor& a, const Monitor& b) { return a.primary && !b.primary; });
+    // X11: x11grab startet gar nicht, wenn der Bereich auch nur ein Pixel über den Bildschirm ragt - das passiert mit
+    // Bildschirm-Skalierung (z. B. 150 %), weil Qt-Größe × Faktor gerundet wird. Dann gab es nie einen Clip.
+    if (const QRect root = x11RootRect(); !root.isEmpty())
+        for (Monitor& m : out) {
+            const QRect r = m.rect.intersected(root);
+            m.rect = r.isEmpty() ? root : r;
+        }
     return out;
 }
 
@@ -112,6 +121,15 @@ int onXError(Display*, XErrorEvent* e) {
     return 0;
 }
 }  // namespace
+
+static QRect x11RootRect() {
+    if (WaylandHotkeys::isWayland() || qEnvironmentVariableIsEmpty("DISPLAY")) return QRect();
+    Display* dpy = XOpenDisplay(nullptr);
+    if (!dpy) return QRect();
+    const QRect r(0, 0, DisplayWidth(dpy, DefaultScreen(dpy)), DisplayHeight(dpy, DefaultScreen(dpy)));
+    XCloseDisplay(dpy);
+    return r;
+}
 
 struct GlobalHotkey::Impl {
     std::thread thread;
@@ -226,6 +244,7 @@ void GlobalHotkey::clear() {
 }
 #else
 // Ohne X11 (reiner Wayland-Build): nur der Wayland-Weg
+static QRect x11RootRect() { return QRect(); }
 struct GlobalHotkey::Impl {
     bool wayland = false;
 };
