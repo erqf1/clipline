@@ -66,7 +66,7 @@ check "hotkey after sway reload" 5
 
 echo "----- PipeWire: dieselbe Verbindung für einen zweiten GStreamer-Start?"
 python3 "$DIR/pwreuse.py"
-echo "----- portal (wlr) head"
-head -n 40 "$OUT/xdpw.log"
+echo "----- portal (wlr) screencopy"
+grep -i -E 'shm|format|buffer|dmabuf|gbm|screencopy|frame|error|fail' "$OUT/xdpw.log" | head -n 40
 finish
 exit $FAILS

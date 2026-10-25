@@ -25,15 +25,18 @@ def connect():
     return s
 
 
-def run(fd):
+def run(fd, target=None):
+    sel = f"target-object={target}" if target else f"path={node}"
     try:
-        r = subprocess.run(["gst-launch-1.0", "-q", "pipewiresrc", f"fd={fd}", f"path={node}", "num-buffers=30", "!",
+        r = subprocess.run(["gst-launch-1.0", "-q", "pipewiresrc", f"fd={fd}", sel, "num-buffers=30", "!",
                             "fakesink"], pass_fds=[fd], timeout=15, capture_output=True, text=True)
-        return "ok" if r.returncode == 0 else f"failed ({r.returncode}): {r.stderr.strip()[-200:]}"
+        return "ok" if r.returncode == 0 else f"failed ({r.returncode}): {' / '.join(r.stderr.strip().splitlines()[:3])}"
     except subprocess.TimeoutExpired:
         return "hangs (no picture within 15 s)"
 
 
+print(subprocess.run(["wpctl", "status"], capture_output=True, text=True).stdout[:1500])
+print("default connection, by name:   ", run(connect().fileno(), "cltest"))
 used = connect()
 print("1st start, new connection:      ", run(used.fileno()))
 print("2nd start, same connection:     ", run(used.fileno()))
