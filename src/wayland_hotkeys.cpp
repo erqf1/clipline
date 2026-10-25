@@ -175,8 +175,9 @@ WaylandHotkeys::WaylandHotkeys() {
         QDBusMessage get = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.DBus.Properties", "Get");
         get.setArguments({QString(kShortcuts), QString("version")});
         const QDBusMessage reply = bus.call(get, QDBus::Block, 3000);
-        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty() &&
-            reply.arguments().first().value<QDBusVariant>().variant().toUInt() > 0) {
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            portalVersion_ = reply.arguments().first().value<QDBusVariant>().variant().toUInt();
+        if (portalVersion_ > 0) {
             backend_ = Portal;
             bus.connect(kService, kPath, kShortcuts, "Activated", this,
                         SLOT(onActivated(QDBusObjectPath, QString, qulonglong, QVariantMap)));
@@ -186,7 +187,8 @@ WaylandHotkeys::WaylandHotkeys() {
                    (reply.errorMessage().isEmpty() ? QString("version 0") : reply.errorMessage()));
         }
     }
-    appLog(QString("hotkey: Wayland backend %1 (desktop %2)").arg(backendName(), qEnvironmentVariable("XDG_CURRENT_DESKTOP")));
+    appLog(QString("hotkey: Wayland backend %1 (desktop %2%3)").arg(backendName(), qEnvironmentVariable("XDG_CURRENT_DESKTOP"),
+                                                                     portalVersion_ ? QString(", portal v%1").arg(portalVersion_) : QString()));
     if (backend_ == Hyprland || backend_ == Sway) {
         connect(&hyprEvents_, &QLocalSocket::readyRead, this, [this] {
             bool reloaded = false;
@@ -429,9 +431,19 @@ void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
             if (trig.isEmpty()) missing << s.id;
         }
         appLog("portal: bound " + (info.isEmpty() ? QString("(no details)") : info.join(", ")));
-        if (!missing.isEmpty() && missing.size() == got.size())
+        if (!missing.isEmpty() && missing.size() == got.size()) {
+            // KDE fragt beim ersten Mal per Dialog, ob die Taste gilt. Wurde der weggeklickt (oder Clipline vorher
+            // beendet), bleibt die Taste leer - dann den Tasten-Dialog des Systems einmal neu öffnen (Portal v2)
+            if (portalVersion_ >= 2 && !askedConfigure_) {
+                askedConfigure_ = true;
+                QDBusMessage cfg = QDBusMessage::createMethodCall(kService, kPath, kShortcuts, "ConfigureShortcuts");
+                cfg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QString(), QVariantMap()});
+                QDBusConnection::sessionBus().call(cfg, QDBus::NoBlock);
+                appLog("portal: no key assigned, opened the system shortcut dialog");
+            }
             emit problem(L("Your desktop did not set up the hotkey. Set a key for Clipline in your system settings "
                            "(Shortcuts), or bind the command \"clipline --save\" to a key."));
+        }
     }
 }
 

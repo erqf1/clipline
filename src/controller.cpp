@@ -297,6 +297,7 @@ void Controller::quit() {
 
 void Controller::notify(const QString& title, const QString& text, QSystemTrayIcon::MessageIcon icon, int ms) {
     if (quiet) return;
+    if (icon == QSystemTrayIcon::Warning) appLog(QString("notice: %1: %2").arg(title, text).simplified());
     // Linux: über den Benachrichtigungsdienst - viele Wayland-Desktops (Hyprland, GNOME) haben kein Tray
     if (desktopNotify(title, text, ms, icon == QSystemTrayIcon::Warning)) return;
     if (tray_.isVisible()) tray_.showMessage(title, text, icon, ms);

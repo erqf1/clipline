@@ -55,6 +55,8 @@ private:
     static QString portalTrigger(const QString& sequence);
 
     Backend backend_ = None;
+    uint portalVersion_ = 0;
+    bool askedConfigure_ = false;   // Portal: Tasten-Dialog des Systems in diesem Lauf schon einmal geöffnet
     QMap<GlobalHotkey*, Key> keys_;
     QTimer rebind_;                 // Portal: alle Tasten gesammelt in einem Rutsch eintragen
     enum Step { Idle, Create, Bind } step_ = Idle;
