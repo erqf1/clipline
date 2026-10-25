@@ -17,6 +17,9 @@ jobs:
       matrix:
         session: [x11, wayland]
         build: [current, v1.7.0]
+        exclude:
+          - session: wayland  # prüft nur den Weg der Taste über das Protokoll, das hat 1.7.0 nicht
+            build: v1.7.0
     name: ${{ matrix.session }} (${{ matrix.build }})
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +56,8 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed base-devel git cmake ninja qt6-base qt6-wayland libx11 ffmpeg gstreamer \
             gst-plugins-base gst-plugin-pipewire dbus kwin kglobalacceld xdg-desktop-portal xdg-desktop-portal-kde
+          # KWin hat Datei-Rechte (setcap), die im Container nicht erlaubt sind -> sonst "Operation not permitted"
+          setcap -r /usr/bin/kwin_wayland || true
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
