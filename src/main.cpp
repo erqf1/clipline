@@ -22,6 +22,9 @@
 #include "i18n.h"
 #include "look.h"
 #include "setup.h"
+#ifdef Q_OS_LINUX
+#include "wayland_hotkeys.h"
+#endif
 #include <QDialog>
 #include <QLabel>
 #include <QListWidget>
@@ -274,6 +277,10 @@ int main(int argc, char* argv[]) {
     const bool background = args.contains("--background");
     // Nur eine Instanz: weitere Starts reichen ihren Wunsch weiter
     if (sendToRunning(background ? "noop" : "show")) return 0;
+#ifdef Q_OS_LINUX
+    // So früh wie möglich beim Portal anmelden: Das geht nur vor jedem anderen Portal-Aufruf
+    if (WaylandHotkeys::isWayland()) registerPortalApp();
+#endif
 
     appLog(QString("start: Clipline %1, %2, session %3, desktop %4").arg(APP_VERSION, QSysInfo::prettyProductName(),
                                                                         qEnvironmentVariable("XDG_SESSION_TYPE", "?"),

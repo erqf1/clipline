@@ -42,3 +42,31 @@ jobs:
         if: always()
         run: |
           for f in "$RUNNER_TEMP"/cl/*.log; do echo "===== $f"; tail -n 30 "$f"; done
+
+  kde:
+    # Arch + KDE Plasma 6 (KWin ohne Bildschirm): Taste über das KDE-Portal, nach zwei Starts der alten Version
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 30
+    steps:
+      - name: Dependencies
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git cmake ninja qt6-base qt6-wayland libx11 ffmpeg gstreamer \
+            gst-plugins-base gst-plugin-pipewire dbus kwin kglobalacceld xdg-desktop-portal xdg-desktop-portal-kde
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build (new and 1.7.0)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build
+          cmake --install build
+          git worktree add -q old v1.7.0
+          cmake -S old -B build-old -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-old
+      - name: Test
+        run: |
+          useradd -m tester
+          chmod -R a+rX "$GITHUB_WORKSPACE"
+          su tester -c "bash '$GITHUB_WORKSPACE/tests/linux/kde.sh' '$GITHUB_WORKSPACE/build/clipline' '$GITHUB_WORKSPACE/build-old/clipline' /tmp/kde"

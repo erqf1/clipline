@@ -3,7 +3,9 @@
 #include <QCoreApplication>
 #include <QDBusArgument>
 #include <QDBusConnection>
+#include <QDBusInterface>
 #include <QDBusMessage>
+#include <QDBusReply>
 #include <QDBusMetaType>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
@@ -105,6 +107,37 @@ void registerPortalApp() {
                                                   : "portal: register not possible: " + r.errorMessage());
 }
 
+// KDE: Ohne gültige App-ID legte KDE für Clipline bei jedem Start eine neue Tastengruppe mit Zufallsnamen an.
+// Die alten Gruppen hielten Strg+Alt+S weiter belegt, die neue bekam keine Taste - die Clip-Taste ging nie.
+// Solche Reste entfernen: nur Gruppen, die ausschließlich Clipline-Tasten ("clipline-…") enthalten.
+static void removeKdeLeftovers() {
+    if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains("KDE", Qt::CaseInsensitive)) return;
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    const char* kAccel = "org.kde.kglobalaccel";
+    const QDBusMessage r = bus.call(QDBusMessage::createMethodCall(kAccel, "/kglobalaccel", "org.kde.KGlobalAccel", "allComponents"),
+                                    QDBus::Block, 3000);
+    if (r.type() != QDBusMessage::ReplyMessage || r.arguments().isEmpty()) {
+        appLog("hotkey: KDE shortcut list not available: " + r.errorMessage());
+        return;
+    }
+    for (const QDBusObjectPath& path : qdbus_cast<QList<QDBusObjectPath>>(r.arguments().first())) {
+        QDBusInterface comp(kAccel, path.path(), "org.kde.kglobalaccel.Component", bus);
+        const QString name = comp.property("uniqueName").toString();
+        if (name.isEmpty() || name == kLinuxAppId) continue;
+        const QDBusReply<QStringList> names = comp.call("shortcutNames", QString("default"));
+        if (!names.isValid() || names.value().isEmpty()) continue;
+        bool ours = true;
+        for (const QString& n : names.value()) ours &= n.startsWith("clipline-");
+        if (!ours) continue;
+        for (const QString& n : names.value()) {
+            QDBusMessage un = QDBusMessage::createMethodCall(kAccel, "/kglobalaccel", "org.kde.KGlobalAccel", "unregister");
+            un.setArguments({name, n});
+            bus.call(un, QDBus::Block, 2000);
+        }
+        appLog(QString("hotkey: removed old KDE shortcut group %1 (%2)").arg(name, names.value().join(", ")));
+    }
+}
+
 bool WaylandHotkeys::isWayland() {
     return qEnvironmentVariable("XDG_SESSION_TYPE") == "wayland" || !qEnvironmentVariable("WAYLAND_DISPLAY").isEmpty();
 }
@@ -147,6 +180,7 @@ WaylandHotkeys::WaylandHotkeys() {
             backend_ = Portal;
             bus.connect(kService, kPath, kShortcuts, "Activated", this,
                         SLOT(onActivated(QDBusObjectPath, QString, qulonglong, QVariantMap)));
+            removeKdeLeftovers();
         } else {
             appLog("hotkey: no GlobalShortcuts portal: " +
                    (reply.errorMessage().isEmpty() ? QString("version 0") : reply.errorMessage()));
