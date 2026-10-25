@@ -41,7 +41,7 @@ components() { accel /kglobalaccel org.kde.KGlobalAccel.allComponents 2>/dev/nul
 press() { accel "$1" org.kde.kglobalaccel.Component.invokeShortcut string:clipline-ctrl-alt-s string:default > /dev/null 2>&1; }
 keys_of() { accel /kglobalaccel org.kde.KGlobalAccel.shortcutKeys "array:string:$1,clipline-ctrl-alt-s" 2>/dev/null | grep -c int32; }
 
-start() { QT_QPA_PLATFORM=offscreen "$1" --background > "$OUT/stdout-$2.txt" 2>&1 & PID=$!; sleep 10; }
+start() { QT_QPA_PLATFORM=offscreen CLIPLINE_TEST_NODIALOG=1 "$1" --background > "$OUT/stdout-$2.txt" 2>&1 & PID=$!; sleep 10; }
 stop() { kill "$PID"; wait "$PID" 2>/dev/null; sleep 1; }
 
 echo "== old version, two starts"
@@ -57,18 +57,22 @@ for run in 1 2; do
     echo "== new version, start $run"
     start "$NEW" "new$run"
     echo "groups: $(components | tr '\n' ' ')"
-    if components | grep -q win_mert_Clipline; then echo "PASS new start $run: KDE knows Clipline (win.mert.Clipline)"
+    # Die Tastengruppe legt KDE an, sobald sein Dialog vom ersten Start zu ist
+    if [ "$run" = 1 ]; then :
+    elif components | grep -q win_mert_Clipline; then echo "PASS new start $run: KDE knows Clipline (win.mert.Clipline)"
     else echo "FAIL new start $run: KDE has no Clipline shortcut group"; FAILS=$((FAILS + 1)); fi
     # Beim ersten Mal fragt KDE per Dialog nach (hier klickt niemand) - ohne Taste muss Clipline Bescheid sagen
     if grep -q "portal: bound clipline-ctrl-alt-s -> Ctrl+Alt+S" "$LOG" 2>/dev/null; then echo "PASS new start $run: key assigned"
     elif [ "$run" = 1 ]; then echo "INFO new start 1: KDE is asking in its dialog (nobody clicks here)"
     elif grep -q "notice: .*did not set up the hotkey" "$LOG" 2>/dev/null; then echo "PASS new start $run: no key yet -> Clipline tells the user and opens the KDE dialog"
     else echo "FAIL new start $run: no key and no hint"; FAILS=$((FAILS + 1)); fi
-    before=$(grep -c "portal: clipline-ctrl-alt-s pressed, 1 action" "$LOG" 2>/dev/null)
-    press /component/win_mert_Clipline
-    sleep 2
-    after=$(grep -c "portal: clipline-ctrl-alt-s pressed, 1 action" "$LOG" 2>/dev/null)
-    if [ "$after" -gt "$before" ]; then echo "PASS new start $run: key press reaches Clipline"; else echo "FAIL new start $run: key press not received"; FAILS=$((FAILS + 1)); fi
+    if [ "$run" = 2 ]; then
+        before=$(grep -c "portal: clipline-ctrl-alt-s pressed, 1 action" "$LOG" 2>/dev/null)
+        press /component/win_mert_Clipline
+        sleep 2
+        after=$(grep -c "portal: clipline-ctrl-alt-s pressed, 1 action" "$LOG" 2>/dev/null)
+        if [ "$after" -gt "$before" ]; then echo "PASS new start $run: key press reaches Clipline"; else echo "FAIL new start $run: key press not received"; FAILS=$((FAILS + 1)); fi
+    fi
     stop
 done
 

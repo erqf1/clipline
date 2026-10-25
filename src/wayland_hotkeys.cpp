@@ -434,7 +434,8 @@ void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
         if (!missing.isEmpty() && missing.size() == got.size()) {
             // KDE fragt beim ersten Mal per Dialog, ob die Taste gilt. Wurde der weggeklickt (oder Clipline vorher
             // beendet), bleibt die Taste leer - dann den Tasten-Dialog des Systems einmal neu öffnen (Portal v2)
-            if (portalVersion_ >= 2 && !askedConfigure_) {
+            // (CLIPLINE_TEST_NODIALOG: Linux-Test ohne Bildschirm - dort stürzt KWin beim Öffnen des Dialogs ab)
+            if (portalVersion_ >= 2 && !askedConfigure_ && !qEnvironmentVariableIsSet("CLIPLINE_TEST_NODIALOG")) {
                 askedConfigure_ = true;
                 QDBusMessage cfg = QDBusMessage::createMethodCall(kService, kPath, kShortcuts, "ConfigureShortcuts");
                 cfg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QString(), QVariantMap()});
