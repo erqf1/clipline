@@ -1,4 +1,5 @@
 #include "config.h"
+#include "platform.h"
 
 #include <QDir>
 #include <QSettings>
@@ -46,13 +47,14 @@ Config Config::load() {
         b.height = s.value("height", b.height).toInt();
         b.fps = s.value("fps", b.fps).toInt();
         b.quality = std::clamp(s.value("quality", b.quality).toInt(), 0, 2);
+        b.monitor = s.value("monitor").toString();
         c.extraButtons << b;
     }
     s.endArray();
     return c;
 }
 
-ClipButton Config::mainButton() const { return {hotkey, clipSeconds, height, fps, quality}; }
+ClipButton Config::mainButton() const { return {hotkey, clipSeconds, height, fps, quality, monitor}; }
 
 QList<ClipButton> Config::allButtons() const { return QList<ClipButton>{mainButton()} + extraButtons; }
 
@@ -62,18 +64,45 @@ Config Config::withButton(const ClipButton& b) const {
     c.height = b.height;
     c.fps = b.fps;
     c.quality = b.quality;
+    c.monitor = b.monitor;
     return c;
 }
 
-Config Config::recordingConfig() const {
+QString Config::buttonMonitor(int i) const {
+    const QList<ClipButton> all = allButtons();
+    return i >= 0 && i < all.size() ? findMonitor(all[i].monitor).id : findMonitor(monitor).id;
+}
+
+QStringList Config::recordingMonitors() const {
+    QStringList out;
+    for (int i = 0; i < allButtons().size(); ++i) {
+        const QString id = buttonMonitor(i);
+        if (!out.contains(id)) out << id;
+    }
+    return out;
+}
+
+Config Config::recordingConfig(const QString& mon) const {
     Config c = *this;
-    for (const ClipButton& b : extraButtons) {
+    bool first = true;
+    for (int i = 0; i < allButtons().size(); ++i) {
+        if (buttonMonitor(i) != mon) continue;
+        const ClipButton b = allButtons()[i];
+        if (first) {
+            c.clipSeconds = b.seconds;
+            c.height = b.height;
+            c.fps = b.fps;
+            c.quality = b.quality;
+            first = false;
+            continue;
+        }
         c.clipSeconds = std::max(c.clipSeconds, b.seconds);
         // 0 = native ist das Höchste
         if (c.height != 0) c.height = b.height == 0 ? 0 : std::max(c.height, b.height);
         c.fps = std::max(c.fps, b.fps);
         c.quality = std::max(c.quality, b.quality);
     }
+    c.monitor = mon;
     return c;
 }
 
@@ -111,6 +140,7 @@ void Config::save() const {
         s.setValue("height", b.height);
         s.setValue("fps", b.fps);
         s.setValue("quality", b.quality);
+        s.setValue("monitor", b.monitor);
     }
     s.endArray();
 }

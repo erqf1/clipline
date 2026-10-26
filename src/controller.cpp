@@ -12,6 +12,13 @@
 #include "i18n.h"
 #include "look.h"
 #include "setup.h"
+#include <algorithm>
+#if defined(Q_OS_LINUX)
+#include "wayland_capture.h"
+static bool waylandSession() { return WaylandCapture::isWaylandSession(); }
+#else
+static bool waylandSession() { return false; }
+#endif
 #if defined(Q_OS_LINUX)
 #include "wayland_hotkeys.h"
 #endif
@@ -77,47 +84,100 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
         });
 #endif
     connect(&muteHotkey_, &GlobalHotkey::activated, this, &Controller::toggleMute);
-    connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);
-    // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
-    connect(&rec_, &Recorder::waylandTokenChanged, this, [this](const QString& token) {
-        cfg_.waylandToken = token;
-        if (!quiet) cfg_.save();
-    });
-    connect(&rec_, &Recorder::warning, this, [this](const QString& w) {
-        notify("Clipline", w, QSystemTrayIcon::Warning, 6000);
-    });
-    // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
-    // (Hinweise blendet Windows im Spiel oft aus)
-    connect(&rec_, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
-        appLog(QString("save: %1 %2 %3").arg(ok ? "ok" : "FAILED", path, err));
-        if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
-        if (ok) {
-            lastClip_ = path;
-            if (err.isEmpty())
-                notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
-            else
-                notify(L("Clip incomplete"), QFileInfo(path).fileName() + "\n" + err, QSystemTrayIcon::Warning, 6000);
-            if (gallery_) gallery_->reload();
-            emit clipDone(path, true);
-        } else {
-            emit clipDone(QString(), false);
-            notify("Clipline", err.isEmpty() ? L("Could not save the clip.") : err.left(300),
-                              QSystemTrayIcon::Warning, 5000);
-        }
-    });
 
+    paused_ = noRecord;
     applyConfig(cfg_, true);
     if (!quiet) tray_.show();
-    if (!noRecord) rec_.start();
     refreshTray();
 }
 
 Controller::~Controller() {
     delete gallery_;
-    rec_.stop();
     // Recorder/Hotkey leben kürzer als der QObject-Teil des Controllers: keine Signale mehr an uns
-    rec_.disconnect(this);
+    for (auto& [mon, rec] : recs_) {
+        rec->stop();
+        rec->disconnect(this);
+    }
     hotkey_.disconnect(this);
+}
+
+Config Controller::effective() const {
+    Config c = cfg_;
+    if (waylandSession())
+        for (ClipButton& b : c.extraButtons) b.monitor = c.monitor;
+    return c;
+}
+
+Recorder* Controller::recFor(const QString& monitor) const {
+    for (const auto& [mon, rec] : recs_)
+        if (mon == monitor) return rec.get();
+    return recs_.empty() ? nullptr : recs_.front().second.get();
+}
+
+bool Controller::recording() const {
+    for (const auto& [mon, rec] : recs_)
+        if (rec->wanted()) return true;
+    return false;
+}
+
+bool Controller::micMuted() const { return !recs_.empty() && recs_.front().second->micMuted(); }
+
+// Für jeden Bildschirm, den ein Clip-Knopf braucht, läuft eine eigene Aufnahme (mit Länge und Grafik des
+// anspruchsvollsten Knopfs dort). Nicht mehr gebrauchte Aufnahmen werden beendet.
+void Controller::syncRecorders() {
+    const Config eff = effective();
+    const QStringList want = eff.recordingMonitors();
+    for (auto it = recs_.begin(); it != recs_.end();) {
+        if (!want.contains(it->first)) {
+            it->second->stop();
+            it->second->disconnect(this);
+            it = recs_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    std::vector<std::pair<QString, std::unique_ptr<Recorder>>> ordered;
+    for (const QString& mon : want) {
+        auto it = std::find_if(recs_.begin(), recs_.end(), [&](const auto& p) { return p.first == mon; });
+        std::unique_ptr<Recorder> rec;
+        const bool fresh = it == recs_.end();
+        if (!fresh) rec = std::move(it->second);
+        else {
+            rec = std::make_unique<Recorder>();
+            Recorder* r = rec.get();
+            connect(r, &Recorder::stateChanged, this, &Controller::refreshTray);
+            // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
+            connect(r, &Recorder::waylandTokenChanged, this, [this](const QString& token) {
+                cfg_.waylandToken = token;
+                if (!quiet) cfg_.save();
+            });
+            connect(r, &Recorder::warning, this, [this](const QString& w) { notify("Clipline", w, QSystemTrayIcon::Warning, 6000); });
+            // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
+            // (Hinweise blendet Windows im Spiel oft aus)
+            connect(r, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
+                appLog(QString("save: %1 %2 %3").arg(ok ? "ok" : "FAILED", path, err));
+                if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
+                if (ok) {
+                    lastClip_ = path;
+                    if (err.isEmpty())
+                        notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
+                    else
+                        notify(L("Clip incomplete"), QFileInfo(path).fileName() + "\n" + err, QSystemTrayIcon::Warning, 6000);
+                    if (gallery_) gallery_->reload();
+                    emit clipDone(path, true);
+                } else {
+                    emit clipDone(QString(), false);
+                    notify("Clipline", err.isEmpty() ? L("Could not save the clip.") : err.left(300), QSystemTrayIcon::Warning, 5000);
+                }
+            });
+        }
+        rec->setConfig(eff.recordingConfig(mon));
+        if (!recs_.empty() && !fresh) rec->setMicMuted(micMuted());
+        if (fresh && !paused_) rec->start();
+        ordered.emplace_back(mon, std::move(rec));
+    }
+    recs_ = std::move(ordered);
+    appLog(QString("record: %1 recording(s): %2").arg(recs_.size()).arg(want.join(", ")));
 }
 
 bool Controller::listen() {
@@ -150,7 +210,7 @@ void Controller::applyConfig(const Config& c, bool first) {
     applyLook(cfg_);
     QDir().mkpath(cfg_.clipsDir);
     if (autostartChanged && !quiet) setAutostart(cfg_.autostart);
-    rec_.setConfig(cfg_.recordingConfig());  // aufgenommen wird für den anspruchsvollsten Clip-Knopf
+    syncRecorders();
     registerHotkey();
     if (gallery_) {  // neu aufbauen, damit Farben/Sprache greifen
         const bool told = toldBackground_;
@@ -166,6 +226,11 @@ void Controller::registerHotkey() {
     if (quiet) return;
     muteHotkey_.clear();
     extraKeys_.clear();
+    hotkey_.clear();
+    // Alle eigenen Tasten vorab melden: "F9 auch mit Shift" darf einer eigenen Shift+F9-Taste nichts wegnehmen
+    QStringList exact = {cfg_.hotkey, cfg_.muteHotkey};
+    for (const ClipButton& b : cfg_.extraButtons) exact << b.hotkey;
+    setReservedHotkeys(exact);
     hotkey_.setDescription(L("Save clip"));
     muteHotkey_.setDescription(L("Mute microphone"));
     if (!cfg_.muteHotkey.isEmpty() && !cfg_.mic.isEmpty() && !muteHotkey_.set(cfg_.muteHotkey)) {
@@ -200,15 +265,17 @@ void Controller::registerHotkey() {
 }
 
 void Controller::refreshTray() {
-    const bool rec = rec_.wanted();
-    tray_.setIcon(QIcon(cliplineLogo(64, rec && rec_.running(), !rec)));
+    const bool rec = recording();
+    bool running = !recs_.empty();
+    for (const auto& [mon, r] : recs_) running = running && r->running();
+    tray_.setIcon(QIcon(cliplineLogo(64, rec && running, !rec)));
     const QString key = keyText(cfg_.hotkey);
     tray_.setToolTip((rec ? QString("Clipline – %1 · %2 = %3").arg(L("Recording"), key, L("last %1").arg(fmtDuration(cfg_.clipSeconds)))
                           : QString("Clipline – %1").arg(L("Paused"))) +
-                     (rec_.micMuted() ? " · " + L("Microphone muted") : QString()));
+                     (micMuted() ? " · " + L("Microphone muted") : QString()));
     actPause_->setText(rec ? L("Pause recording") : L("Resume recording"));
     actMute_->setVisible(!cfg_.mic.isEmpty());
-    actMute_->setChecked(rec_.micMuted());
+    actMute_->setChecked(micMuted());
     const QString muteKey = cfg_.muteHotkey.isEmpty() ? QString() : keyText(cfg_.muteHotkey);
     actMute_->setText(L("Mute microphone") + (muteKey.isEmpty() ? QString() : QStringLiteral("\t") + muteKey));
     actSave_->setText(L("Save clip") + (cfg_.extraButtons.isEmpty() ? QString() : QString(" (%1)").arg(fmtDuration(cfg_.clipSeconds))) +
@@ -267,21 +334,27 @@ QString Controller::keyText(const QString& sequence) const {
 }
 
 void Controller::saveClipButton(int i) {
-    const QList<ClipButton> buttons = cfg_.allButtons();
+    const Config eff = effective();
+    const QList<ClipButton> buttons = eff.allButtons();
     if (i < 0 || i >= buttons.size()) return;
+    Recorder* rec = recFor(eff.buttonMonitor(i));
+    if (!rec) return;
     appLog(QString("save: clip button %1 (%2 s), buffered %3 s").arg(i + 1).arg(buttons[i].seconds)
-               .arg(rec_.bufferedSeconds(), 0, 'f', 1));
-    if (!rec_.wanted()) {
+               .arg(rec->bufferedSeconds(), 0, 'f', 1));
+    if (!rec->wanted()) {
         if (cfg_.sound) playErrorSound();
         notify("Clipline", L("Recording is paused – no clip was saved."), QSystemTrayIcon::Warning, 5000);
         return;
     }
-    rec_.saveClip(buttons[i]);
+    rec->saveClip(buttons[i]);
 }
 
 void Controller::togglePause() {
-    if (rec_.wanted()) rec_.stop();
-    else rec_.start();
+    paused_ = recording();
+    for (auto& [mon, rec] : recs_) {
+        if (paused_) rec->stop();
+        else rec->start();
+    }
     refreshTray();
 }
 
@@ -300,15 +373,16 @@ void Controller::openSettings() {
 // Mikrofon stumm/an (Hotkey oder Tray-Menü) - wirkt sofort, die Aufnahme läuft weiter
 void Controller::toggleMute() {
     if (cfg_.mic.isEmpty()) return;
-    rec_.setMicMuted(!rec_.micMuted());
-    notify(rec_.micMuted() ? L("Microphone muted") : L("Microphone on"),
-           rec_.micMuted() ? L("Your voice is not recorded until you press the key again.") : QString(),
+    const bool mute = !micMuted();
+    for (auto& [mon, rec] : recs_) rec->setMicMuted(mute);
+    notify(mute ? L("Microphone muted") : L("Microphone on"),
+           mute ? L("Your voice is not recorded until you press the key again.") : QString(),
            QSystemTrayIcon::Information, 1500);
     refreshTray();
 }
 
 void Controller::quit() {
-    rec_.stop();
+    for (auto& [mon, rec] : recs_) rec->stop();
     tray_.hide();
     QApplication::quit();
 }

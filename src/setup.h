@@ -21,21 +21,25 @@ class HotkeyButton : public QPushButton {
 public:
     explicit HotkeyButton(const QString& seq, QWidget* parent = nullptr);
     QString sequence() const { return seq_; }
-    void setAllowClear(bool on) { allowClear_ = on; }  // Rücktaste/Entf entfernt die Taste
+    void setSequence(const QString& seq);  // z. B. leer = Taste entfernen
 
 signals:
     void sequenceChanged(const QString& seq);
 
 protected:
+    bool event(QEvent* e) override;  // beim Aufnehmen bekommt der Knopf jede Taste (auch Tab und Kürzel des Fensters)
     void keyPressEvent(QKeyEvent* e) override;
+    void contextMenuEvent(QContextMenuEvent* e) override;  // Shift+F10 und Menütaste (Windows)
     void focusOutEvent(QFocusEvent* e) override;
 
 private:
     void startRecording();
     void stopRecording();
     void updateText();
+    void take(Qt::KeyboardModifiers mods, int key);
     QString seq_;
-    bool recording_ = false, allowClear_ = false;
+    bool recording_ = false;
+    QTimer hintTimer_;  // kurzer Hinweis im Knopf ("nur mit Strg, Alt oder Shift")
 };
 
 // Zeigt ein echtes Foto genau in der gewählten Aufnahmeauflösung: Das Foto wird auf diese Auflösung
@@ -85,15 +89,15 @@ private:
     QColor accent_ = QColor("#ff4d6d");
 };
 
-// Die vier Einstellungsseiten. Werden vom Ersteinrichtungs-Assistenten nacheinander
-// und im Einstellungsfenster als Tabs benutzt.
+// Die vier Einstellungsseiten (Allgemein, Ton, Clip-Tasten, Aussehen). Werden vom Ersteinrichtungs-Assistenten
+// nacheinander und im Einstellungsfenster als Tabs benutzt.
 class ConfigPages : public QObject {
     Q_OBJECT
 public:
     ConfigPages(const Config& c, QObject* parent);
     QWidget* folderPage(bool welcome);
-    QWidget* recordingPage();
-    QWidget* hotkeyPage();
+    QWidget* soundPage();
+    QWidget* buttonsPage();
     QWidget* lookPage();
     Config config() const { return cfg_; }
 
@@ -103,20 +107,22 @@ signals:
 
 private:
     void updateRam();
-    QSize nativeSize() const;
-    void rebuildExtras();     // Karten für Clip-Knopf 2, 3, … neu aufbauen
-    QWidget* extraCard(int i);
-    void checkDuplicates();   // zwei Knöpfe mit derselben Taste?
+    QSize nativeSize(const QString& monitor) const;
+    ClipButton button(int i) const;              // 0 = Clip-Knopf 1
+    void setButton(int i, const ClipButton& b);
+    void rebuildButtons();     // Karten aller Clip-Knöpfe neu aufbauen
+    QWidget* buttonCard(int i);
+    void checkDuplicates();    // zwei Knöpfe mit derselben Taste?
 
     Config cfg_;
-    QVBoxLayout* extrasBox_ = nullptr;
+    QVBoxLayout* buttonsBox_ = nullptr;
     QLabel* dupWarn_ = nullptr;
-    QLabel* multiNote_ = nullptr;  // Hinweis auf der Qualitätsseite, wenn es mehrere Knöpfe gibt
+    QLabel* multiNote_ = nullptr;  // Hinweis, wenn es mehrere Knöpfe gibt
     QList<Monitor> monitors_;
-    QLabel *ramLabel_ = nullptr, *ramDetail_ = nullptr, *lenLabel_ = nullptr, *diskLabel_ = nullptr;
+    QLabel *ramLabel_ = nullptr, *ramDetail_ = nullptr, *diskLabel_ = nullptr, *diskTitle_ = nullptr, *previewTitle_ = nullptr;
     QProgressBar* ramBar_ = nullptr;
-    QComboBox *res_ = nullptr, *fps_ = nullptr;
     QualityPreview* preview_ = nullptr;
+    int previewIdx_ = 0;  // Vorschau und Clip-Größe zeigen diesen Knopf (zuletzt bearbeitet)
 };
 
 class SetupWizard : public QDialog {

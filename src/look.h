@@ -25,3 +25,5 @@ QIcon icon(Ic id, const QColor& c);
 // Mausrad scrollt weich (kurze Animation statt Sprüngen), wie im Browser. Touchpads scrollen schon weich.
 class QAbstractScrollArea;
 void enableSmoothScroll(QAbstractScrollArea* area);
+// Mausrad verstellt keine Auswahllisten/Regler/Zahlenfelder mehr, sondern scrollt die Seite
+void installNoWheelChange();

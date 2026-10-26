@@ -1,6 +1,11 @@
 #include "setup.h"
 
 #include <QApplication>
+#include <QColorDialog>
+#include <QContextMenuEvent>
+#include <QPointer>
+#include <memory>
+#include <thread>
 #include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -23,6 +28,12 @@
 #include <QVBoxLayout>
 #include "i18n.h"
 #include "look.h"
+#if defined(Q_OS_LINUX)
+#include "wayland_capture.h"
+static bool waylandSession() { return WaylandCapture::isWaylandSession(); }
+#else
+static bool waylandSession() { return false; }
+#endif
 
 // ---------------------------------------------------------------- Mikrofon-Pegel
 static constexpr double kMeterMin = -80.0;
@@ -237,11 +248,20 @@ HotkeyButton::HotkeyButton(const QString& seq, QWidget* parent) : QPushButton(pa
     setCursor(Qt::PointingHandCursor);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumHeight(54);
+    hintTimer_.setSingleShot(true);
+    connect(&hintTimer_, &QTimer::timeout, this, [this] { updateText(); });
     connect(this, &QPushButton::clicked, this, [this] { recording_ ? stopRecording() : startRecording(); });
     updateText();
 }
 
+void HotkeyButton::setSequence(const QString& seq) {
+    seq_ = seq;
+    if (recording_) stopRecording();
+    updateText();
+}
+
 void HotkeyButton::updateText() {
+    if (hintTimer_.isActive()) return;
     if (recording_) {
         setText(L("Press keys…"));
         return;
@@ -269,26 +289,60 @@ void HotkeyButton::stopRecording() {
     updateText();
 }
 
-void HotkeyButton::keyPressEvent(QKeyEvent* e) {
-    if (!recording_) return QPushButton::keyPressEvent(e);
-    const int key = e->key();
-    if (key == Qt::Key_Escape) return stopRecording();
-    if (allowClear_ && (key == Qt::Key_Backspace || key == Qt::Key_Delete) && !(e->modifiers() & ~Qt::KeypadModifier)) {
-        seq_.clear();  // Taste entfernen (z. B. keine Mikrofon-Stummtaste)
-        stopRecording();
-        emit sequenceChanged(seq_);
+// Taste übernehmen - oder kurz sagen, warum nicht
+void HotkeyButton::take(Qt::KeyboardModifiers mods, int key) {
+    const bool keypad = mods & Qt::KeypadModifier;
+    const Qt::KeyboardModifiers real = mods & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier);
+    if (!real && !keyAllowedAlone(key, keypad)) {
+        // Enter, Buchstaben usw. allein: die könnte man sonst in keinem Programm mehr tippen
+        hintTimer_.start(2200);
+        setText(L("Only together with Ctrl, Alt or Shift"));
         return;
     }
-    if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta ||
-        key == Qt::Key_AltGr || key == Qt::Key_unknown)
-        return;  // warten, bis eine "echte" Taste kommt
-    const Qt::KeyboardModifiers mods =
-        e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier);
-    const bool fkey = key >= Qt::Key_F1 && key <= Qt::Key_F24;
-    if (!mods && !fkey && key != Qt::Key_Print && key != Qt::Key_Pause && key != Qt::Key_ScrollLock) return;
-    seq_ = QKeySequence(QKeyCombination(mods, Qt::Key(key))).toString(QKeySequence::PortableText);
+    seq_ = QKeySequence(QKeyCombination(real | (keypad ? Qt::KeypadModifier : Qt::NoModifier), Qt::Key(key))).toString(QKeySequence::PortableText);
     stopRecording();
     emit sequenceChanged(seq_);
+}
+
+bool HotkeyButton::event(QEvent* e) {
+    if (recording_ && e->type() == QEvent::ShortcutOverride) {
+        e->accept();
+        return true;
+    }
+    if (recording_ && e->type() == QEvent::KeyPress) {  // sonst springt Tab zum nächsten Feld
+        keyPressEvent(static_cast<QKeyEvent*>(e));
+        return true;
+    }
+    return QPushButton::event(e);
+}
+
+void HotkeyButton::keyPressEvent(QKeyEvent* e) {
+    if (!recording_) return QPushButton::keyPressEvent(e);
+    int key = e->key();
+    Qt::KeyboardModifiers mods = e->modifiers();
+    if (key == Qt::Key_Escape && !(mods & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier))) return stopRecording();
+    if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt || key == Qt::Key_Meta ||
+        key == Qt::Key_AltGr || key == Qt::Key_unknown || key == 0)
+        return;  // warten, bis eine "echte" Taste kommt
+    if (key == Qt::Key_Backtab) {  // Shift+Tab meldet Qt als eigene Taste
+        key = Qt::Key_Tab;
+        mods |= Qt::ShiftModifier;
+    }
+    // Ziffernblock nur für Ziffern und Rechenzeichen merken (Pfeile vom Ziffernblock sind normale Pfeile)
+    const bool digitOrOp = (key >= Qt::Key_0 && key <= Qt::Key_9) || key == Qt::Key_Plus || key == Qt::Key_Minus ||
+                           key == Qt::Key_Asterisk || key == Qt::Key_Slash || key == Qt::Key_Period || key == Qt::Key_Comma ||
+                           key == Qt::Key_Enter;
+    if (!digitOrOp) mods &= ~Qt::KeypadModifier;
+    take(mods, key);
+}
+
+// Windows macht aus Shift+F10 (und der Menütaste) ein "Kontextmenü" - Qt meldet dann keinen Tastendruck
+void HotkeyButton::contextMenuEvent(QContextMenuEvent* e) {
+    if (!recording_ || e->reason() != QContextMenuEvent::Keyboard) return QPushButton::contextMenuEvent(e);
+    const Qt::KeyboardModifiers mods = QGuiApplication::queryKeyboardModifiers() &
+                                       (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier);
+    if (mods & Qt::ShiftModifier) take(mods, Qt::Key_F10);
+    else take(mods, Qt::Key_Menu);
 }
 
 void HotkeyButton::focusOutEvent(QFocusEvent* e) {
@@ -302,140 +356,221 @@ ConfigPages::ConfigPages(const Config& c, QObject* parent) : QObject(parent), cf
     if (cfg_.clipsDir.isEmpty()) cfg_.clipsDir = defaultClipsDir();
 }
 
-QSize ConfigPages::nativeSize() const {
-    const Monitor m = findMonitor(cfg_.monitor);
+QSize ConfigPages::nativeSize(const QString& monitor) const {
+    const Monitor m = findMonitor(monitor);
     if (!m.rect.isEmpty()) return m.rect.size();
     QScreen* s = QGuiApplication::primaryScreen();
     return s ? s->size() * s->devicePixelRatio() : QSize(1920, 1080);
 }
 
+ClipButton ConfigPages::button(int i) const { return cfg_.allButtons().value(i); }
+
+void ConfigPages::setButton(int i, const ClipButton& b) {
+    if (i == 0) {
+        cfg_.hotkey = b.hotkey;
+        cfg_.clipSeconds = b.seconds;
+        cfg_.height = b.height;
+        cfg_.fps = b.fps;
+        cfg_.quality = b.quality;
+        cfg_.monitor = b.monitor;
+    } else if (i - 1 < cfg_.extraButtons.size()) {
+        cfg_.extraButtons[i - 1] = b;
+    }
+}
+
+// Arbeitsspeicher: pro Bildschirm eine Aufnahme, jeweils für den anspruchsvollsten Knopf dort
 void ConfigPages::updateRam() {
-    const QSize n = nativeSize();
-    // Aufgenommen wird für den anspruchsvollsten Clip-Knopf - danach richtet sich der Arbeitsspeicher
-    const Config rec = cfg_.recordingConfig();
-    const QSize s = captureSize(cfg_, n), rs = captureSize(rec, n);
-    const double total = estimateTotalMB(rec, n), buf = estimateBufferMB(rec, n);
+    double total = 0, buffers = 0;
+    QStringList parts;
+    const QStringList mons = cfg_.recordingMonitors();
+    for (int k = 0; k < mons.size(); ++k) {
+        const Config rec = cfg_.recordingConfig(mons[k]);
+        const QSize n = nativeSize(mons[k]), rs = captureSize(rec, n);
+        const double buf = estimateBufferMB(rec, n);
+        total += estimateTotalMB(rec, n) - (k > 0 ? 30 : 0);  // das Programm selbst läuft nur einmal
+        buffers += buf;
+        parts << QString("%1×%2 · %3 fps · %4 Mbit/s").arg(rs.width()).arg(rs.height()).arg(rec.fps).arg(videoBitrate(rec, n) / 1e6, 0, 'f', 1);
+    }
+    const int pi = std::clamp(previewIdx_, 0, int(cfg_.allButtons().size()) - 1);
+    const ClipButton pb = button(pi);
+    const QSize pn = nativeSize(pb.monitor);
     if (ramLabel_) ramLabel_->setText("≈ " + fmtMB(total));
     if (ramBar_) ramBar_->setValue(int(std::min(2048.0, total)));
-    if (diskLabel_) diskLabel_->setText("≈ " + fmtMB(estimateClipMB(cfg_, n)));
-    if (ramDetail_)
-        ramDetail_->setText(QString("%1 %2 · %3×%4 · %5 fps · %6 Mbit/s")
-                                .arg(L("buffer")).arg(fmtMB(buf)).arg(rs.width()).arg(rs.height()).arg(rec.fps)
-                                .arg(videoBitrate(rec, n) / 1e6, 0, 'f', 1));
-    if (multiNote_) multiNote_->setVisible(!cfg_.extraButtons.isEmpty());
-    if (lenLabel_) lenLabel_->setText(fmtDuration(cfg_.clipSeconds));
-    if (preview_) preview_->setCaptureHeight(s.height(), n.height());
+    if (diskLabel_) diskLabel_->setText("≈ " + fmtMB(estimateClipMB(cfg_.withButton(pb), pn)));
+    if (diskTitle_) diskTitle_->setText(L("Size per clip (clip button %1)").arg(pi + 1));
+    if (ramDetail_) ramDetail_->setText(QString("%1 %2 · %3").arg(L("buffer")).arg(fmtMB(buffers)).arg(parts.join("  ·  ")));
+    if (multiNote_) multiNote_->setVisible(cfg_.allButtons().size() > 1);
+    if (preview_) {
+        preview_->setCaptureHeight(captureSize(cfg_.withButton(pb), pn).height(), pn.height());
+        if (previewTitle_) previewTitle_->setText(L("Preview: clip button %1").arg(pi + 1));
+    }
 }
 
 // Taste, die noch kein Knopf hat (für einen neuen Clip-Knopf)
 static QString freeHotkey(const Config& c) {
     QStringList used = {c.hotkey, c.muteHotkey};
     for (const ClipButton& b : c.extraButtons) used << b.hotkey;
-    for (const char* k : {"Ctrl+Alt+D", "Ctrl+Alt+F", "Ctrl+Alt+G", "Ctrl+Alt+H", "Ctrl+Alt+J", "Ctrl+Alt+K"})
+    for (const char* k : {"F10", "F8", "F7", "F6", "Ctrl+F9", "Ctrl+F10", "Ctrl+Alt+D", "Ctrl+Alt+F"})
         if (!used.contains(k)) return k;
     return QString();
 }
 
 void ConfigPages::checkDuplicates() {
     if (!dupWarn_) return;
-    QStringList keys = {cfg_.hotkey};
-    for (const ClipButton& b : cfg_.extraButtons) keys << b.hotkey;
+    QStringList keys;
+    for (const ClipButton& b : cfg_.allButtons()) keys << b.hotkey;
     keys.removeAll(QString());
     bool dup = false;
     for (int i = 0; i < keys.size(); ++i) dup |= keys.indexOf(keys[i], i + 1) >= 0;
     dupWarn_->setVisible(dup);
 }
 
-// Karte für Clip-Knopf i+2: Taste, Länge, Auflösung, Bildrate, Detail - und Entfernen
-QWidget* ConfigPages::extraCard(int i) {
+static QWidget* segmented(const QStringList& names, int current, QButtonGroup** out) {
+    auto* seg = new QWidget;
+    auto* sl = new QHBoxLayout(seg);
+    sl->setContentsMargins(0, 0, 0, 0);
+    sl->setSpacing(0);
+    auto* group = new QButtonGroup(seg);
+    for (int q = 0; q < names.size(); ++q) {
+        auto* qb = new QPushButton(names[q]);
+        qb->setObjectName("seg");
+        qb->setCheckable(true);
+        qb->setChecked(current == q);
+        group->addButton(qb, q);
+        sl->addWidget(qb);
+    }
+    sl->addStretch();
+    *out = group;
+    return seg;
+}
+
+// Karte für Clip-Knopf i+1 (0 = Knopf 1): Taste, Länge, Bildschirm, Auflösung, Bildrate, Detail - ab Knopf 2 auch Entfernen
+QWidget* ConfigPages::buttonCard(int i) {
     auto* card = new QFrame;
     card->setObjectName("card");
     auto* cv = new QVBoxLayout(card);
     cv->setContentsMargins(16, 12, 16, 14);
     cv->setSpacing(8);
     auto* head = new QHBoxLayout;
-    head->addWidget(label("<b>" + L("Clip button %1").arg(i + 2) + "</b>"));
+    auto* title = label("<b>" + L("Clip button %1").arg(i + 1) + "</b>" +
+                        (i == 0 ? QString("  <span style='font-weight:400'>· %1</span>").arg(L("main key")) : QString()));
+    title->setWordWrap(false);
+    head->addWidget(title);
     head->addStretch();
-    auto* del = new QPushButton(icon(Ic::Trash, makePalette(cfg_.accent, cfg_.dark).muted), QString());
-    del->setObjectName("flat");
-    del->setToolTip(L("Delete"));
-    del->setCursor(Qt::PointingHandCursor);
-    head->addWidget(del);
+    if (i > 0) {
+        auto* del = new QPushButton(icon(Ic::Trash, makePalette(cfg_.accent, cfg_.dark).muted), QString());
+        del->setObjectName("flat");
+        del->setToolTip(L("Delete"));
+        del->setCursor(Qt::PointingHandCursor);
+        head->addWidget(del);
+        connect(del, &QPushButton::clicked, this, [this, i] {
+            if (i - 1 >= cfg_.extraButtons.size()) return;
+            cfg_.extraButtons.removeAt(i - 1);
+            previewIdx_ = 0;
+            QTimer::singleShot(0, this, [this] { rebuildButtons(); });  // nicht im Klick des Knopfs selbst löschen
+            updateRam();
+            emit changed();
+        });
+    }
     cv->addLayout(head);
-    const ClipButton b = cfg_.extraButtons[i];
+    const ClipButton b = button(i);
     auto* key = new HotkeyButton(b.hotkey);
-    key->setMinimumHeight(42);
     cv->addWidget(key);
     auto* form = new QFormLayout;
     form->setSpacing(8);
     auto* len = new QComboBox;
     for (int k = 0; k < kLengthCount; ++k) len->addItem(fmtDuration(kLengths[k]), kLengths[k]);
-    len->setCurrentIndex(std::max(0, len->findData(b.seconds)));
-    auto* res = new QComboBox;
-    const QSize n = nativeSize();
-    res->addItem(QString("%1 (%2p)").arg(L("Native")).arg(n.height()), 0);
-    for (int h : {2160, 1440, 1080, 900, 720, 480, 360})
-        if (h < n.height()) res->addItem(QString("%1p").arg(h), h);
-    res->setCurrentIndex(std::max(0, res->findData(b.height)));
-    auto* fps = new QComboBox;
-    const double hz = findMonitor(cfg_.monitor).refresh;
-    for (int f : {30, 60, 120, 144})
-        if (f <= std::max(60.0, hz + 1)) fps->addItem(QString("%1 fps").arg(f), f);
-    fps->setCurrentIndex(std::max(0, fps->findData(b.fps)));
-    auto* seg = new QWidget;
-    auto* sl = new QHBoxLayout(seg);
-    sl->setContentsMargins(0, 0, 0, 0);
-    sl->setSpacing(0);
-    auto* group = new QButtonGroup(seg);
-    const char* names[3] = {"Small", "Balanced", "High"};
-    for (int q = 0; q < 3; ++q) {
-        auto* qb = new QPushButton(L(names[q]));
-        qb->setObjectName("seg");
-        qb->setCheckable(true);
-        qb->setChecked(b.quality == q);
-        group->addButton(qb, q);
-        sl->addWidget(qb);
+    int li = len->findData(b.seconds);
+    if (li < 0) {  // alte Länge, die es in der Liste nicht gibt: die nächstgrößere nehmen
+        li = kLengthCount - 1;
+        for (int k = kLengthCount - 1; k >= 0; --k)
+            if (kLengths[k] >= b.seconds) li = k;
     }
-    sl->addStretch();
+    len->setCurrentIndex(li);
+    auto* screen = new QComboBox;
+    for (const Monitor& m : monitors_) screen->addItem(m.name, m.id);
+    screen->setCurrentIndex(std::max(0, screen->findData(findMonitor(b.monitor).id)));
+    auto* res = new QComboBox;
+    auto* fps = new QComboBox;
+    auto fill = [this, i, res, fps] {
+        const ClipButton cur = button(i);
+        const QSize n = nativeSize(cur.monitor);
+        QSignalBlocker b1(res), b2(fps);
+        res->clear();
+        res->addItem(QString("%1 (%2p)").arg(L("Native")).arg(n.height()), 0);
+        for (int h : {2160, 1440, 1080, 900, 720, 480, 360})
+            if (h < n.height()) res->addItem(QString("%1p").arg(h), h);
+        res->setCurrentIndex(std::max(0, res->findData(cur.height)));
+        const double hz = findMonitor(cur.monitor).refresh;
+        fps->clear();
+        for (int f : {30, 60, 120, 144, 165, 240})
+            if (f <= std::max(60.0, hz + 1)) fps->addItem(QString("%1 fps").arg(f), f);
+        int j = fps->findData(cur.fps);
+        if (j < 0) j = std::max(0, fps->findData(60));
+        fps->setCurrentIndex(j);
+    };
+    fill();
+    QButtonGroup* group = nullptr;
+    QWidget* seg = segmented({L("Small"), L("Balanced"), L("High")}, b.quality, &group);
     form->addRow(L("Clip length"), len);
+    // Unter Wayland wählt man den Bildschirm im Freigabe-Dialog des Systems
+    if (monitors_.size() > 1 && !waylandSession()) form->addRow(L("Screen"), screen);
+    else screen->hide();
     form->addRow(L("Resolution"), res);
     form->addRow(L("Frame rate"), fps);
     form->addRow(L("Detail"), seg);
     cv->addLayout(form);
 
     auto edit = [this, i](std::function<void(ClipButton&)> fn) {
-        if (i >= cfg_.extraButtons.size()) return;
-        fn(cfg_.extraButtons[i]);
+        ClipButton cur = button(i);
+        fn(cur);
+        setButton(i, cur);
+        previewIdx_ = i;
         updateRam();
         checkDuplicates();
         emit changed();
     };
     connect(key, &HotkeyButton::sequenceChanged, this, [edit](const QString& s) { edit([s](ClipButton& c) { c.hotkey = s; }); });
     connect(len, &QComboBox::currentIndexChanged, this, [edit, len] { const int v = len->currentData().toInt(); edit([v](ClipButton& c) { c.seconds = v; }); });
+    connect(screen, &QComboBox::currentIndexChanged, this, [edit, screen, fill, res, fps] {
+        const QString v = screen->currentData().toString();
+        edit([v](ClipButton& c) { c.monitor = v; });
+        fill();
+        const int h = res->currentData().toInt(), f = fps->currentData().toInt();
+        edit([h, f](ClipButton& c) { c.height = h; c.fps = f; });
+    });
     connect(res, &QComboBox::currentIndexChanged, this, [edit, res] { const int v = res->currentData().toInt(); edit([v](ClipButton& c) { c.height = v; }); });
     connect(fps, &QComboBox::currentIndexChanged, this, [edit, fps] { const int v = fps->currentData().toInt(); edit([v](ClipButton& c) { c.fps = v; }); });
     connect(group, &QButtonGroup::idClicked, this, [edit](int q) { edit([q](ClipButton& c) { c.quality = q; }); });
-    connect(del, &QPushButton::clicked, this, [this, i] {
-        if (i >= cfg_.extraButtons.size()) return;
-        cfg_.extraButtons.removeAt(i);
-        QTimer::singleShot(0, this, [this] { rebuildExtras(); });  // nicht im Klick des Knopfs selbst löschen
-        updateRam();
-        emit changed();
-    });
     return card;
 }
 
-void ConfigPages::rebuildExtras() {
-    if (!extrasBox_) return;
-    while (QLayoutItem* it = extrasBox_->takeAt(0)) {
+void ConfigPages::rebuildButtons() {
+    if (!buttonsBox_) return;
+    while (QLayoutItem* it = buttonsBox_->takeAt(0)) {
         if (it->widget()) it->widget()->deleteLater();
         delete it;
     }
-    for (int i = 0; i < cfg_.extraButtons.size(); ++i) extrasBox_->addWidget(extraCard(i));
+    for (int i = 0; i < cfg_.allButtons().size(); ++i) buttonsBox_->addWidget(buttonCard(i));
     checkDuplicates();
+    updateRam();
 }
 
-// 1: Ordner + Sprache
+static QScrollArea* scrollable(QWidget* w) {
+    // Lange Seiten: bei kleinen Fenstern scrollen statt quetschen
+    auto* scroll = new QScrollArea;
+    scroll->setObjectName("plain");
+    scroll->setWidget(w);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet("QScrollArea#plain { border: none; background: transparent; }"
+                          "QScrollArea#plain > QWidget > QWidget { background: transparent; }");
+    enableSmoothScroll(scroll);
+    return scroll;
+}
+
+// 1: Ordner, Sprache, Autostart
 QWidget* ConfigPages::folderPage(bool welcome) {
     QVBoxLayout* v;
     QWidget* w = page(&v);
@@ -466,172 +601,22 @@ QWidget* ConfigPages::folderPage(bool welcome) {
     connect(lang, &QComboBox::currentIndexChanged, this, [this, lang] { cfg_.language = lang->currentData().toString(); emit changed(); });
     form->addRow(L("Language"), lang);
     v->addLayout(form);
+    v->addSpacing(10);
+    auto* autostart = new QCheckBox(L("Start with the computer (runs in the background)"));
+    autostart->setChecked(cfg_.autostart);
+    connect(autostart, &QCheckBox::toggled, this, [this](bool on) { cfg_.autostart = on; emit changed(); });
+    v->addWidget(autostart);
     v->addStretch();
     return w;
 }
 
-// 2: Cliplänge + Qualität + RAM + Vorschau
-QWidget* ConfigPages::recordingPage() {
+// 2: Ton - Systemton, Mikrofon (mit Test), Stummtaste, Ton beim Speichern
+QWidget* ConfigPages::soundPage() {
     QVBoxLayout* v;
     QWidget* w = page(&v);
-    v->addWidget(label(L("Clip length & quality"), "h1"));
-
-    // Cliplänge
-    auto* lenRow = new QHBoxLayout;
-    lenRow->addWidget(label(L("Clip length"), "h2"));
-    lenRow->addStretch();
-    lenLabel_ = new QLabel;
-    lenLabel_->setObjectName("big");
-    lenRow->addWidget(lenLabel_);
-    v->addLayout(lenRow);
-    auto* slider = new QSlider(Qt::Horizontal);
-    slider->setRange(0, kLengthCount - 1);
-    int idx = 0;
-    for (int i = 0; i < kLengthCount; ++i)
-        if (kLengths[i] <= cfg_.clipSeconds) idx = i;
-    slider->setValue(idx);
-    slider->setPageStep(1);
-    v->addWidget(slider);
-    connect(slider, &QSlider::valueChanged, this, [this](int i) { cfg_.clipSeconds = kLengths[i]; updateRam(); emit changed(); });
-
-    // Qualität
-    auto* cols = new QHBoxLayout;
-    cols->setSpacing(18);
-    auto* form = new QFormLayout;
-    form->setSpacing(9);
-    auto* screen = new QComboBox;
-    for (const Monitor& m : monitors_) screen->addItem(m.name, m.id);
-    screen->setCurrentIndex(std::max(0, screen->findData(findMonitor(cfg_.monitor).id)));
-    if (monitors_.size() > 1) form->addRow(L("Screen"), screen);
-    else screen->hide();
-    res_ = new QComboBox;
-    fps_ = new QComboBox;
-    auto fillRes = [this] {
-        const QSize n = nativeSize();
-        QSignalBlocker b1(res_), b2(fps_);
-        res_->clear();
-        res_->addItem(QString("%1 (%2p)").arg(L("Native")).arg(n.height()), 0);
-        for (int h : {2160, 1440, 1080, 900, 720, 480, 360})
-            if (h < n.height()) res_->addItem(QString("%1p").arg(h), h);
-        int i = res_->findData(cfg_.height);
-        if (i < 0) { i = 0; cfg_.height = 0; }
-        res_->setCurrentIndex(i);
-        const double hz = findMonitor(cfg_.monitor).refresh;
-        fps_->clear();
-        for (int f : {30, 60, 120, 144})
-            if (f <= std::max(60.0, hz + 1)) fps_->addItem(QString("%1 fps").arg(f), f);
-        int j = fps_->findData(cfg_.fps);
-        if (j < 0) { j = fps_->findData(60); cfg_.fps = 60; }
-        fps_->setCurrentIndex(std::max(0, j));
-    };
-    fillRes();
-    form->addRow(L("Resolution"), res_);
-    form->addRow(L("Frame rate"), fps_);
-    auto* seg = new QWidget;
-    auto* sl = new QHBoxLayout(seg);
-    sl->setContentsMargins(0, 0, 0, 0);
-    sl->setSpacing(0);
-    auto* group = new QButtonGroup(seg);
-    const char* names[3] = {"Small", "Balanced", "High"};
-    for (int i = 0; i < 3; ++i) {
-        auto* b = new QPushButton(L(names[i]));
-        b->setObjectName("seg");
-        b->setCheckable(true);
-        b->setChecked(cfg_.quality == i);
-        group->addButton(b, i);
-        sl->addWidget(b);
-    }
-    sl->addStretch();
-    form->addRow(L("Detail"), seg);
-    cols->addLayout(form, 1);
-    v->addLayout(cols);
-    preview_ = new QualityPreview;
-    preview_->setMinimumHeight(190);
-    v->addWidget(preview_, 1);
-
-    // RAM
-    auto* box = new QFrame;
-    box->setObjectName("card");
-    auto* bv = new QVBoxLayout(box);
-    bv->setContentsMargins(16, 10, 16, 12);
-    bv->setSpacing(5);
-    auto* top = new QHBoxLayout;
-    top->addWidget(label(L("Estimated RAM"), "muted"));
-    top->addStretch();
-    ramLabel_ = new QLabel;
-    ramLabel_->setObjectName("h2");
-    top->addWidget(ramLabel_);
-    bv->addLayout(top);
-    ramBar_ = new QProgressBar;
-    ramBar_->setRange(0, 2048);
-    ramBar_->setTextVisible(false);
-    ramBar_->setFixedHeight(8);
-    bv->addWidget(ramBar_);
-    auto* disk = new QHBoxLayout;
-    disk->addWidget(label(L("Size per clip"), "muted"));
-    disk->addStretch();
-    diskLabel_ = new QLabel;
-    diskLabel_->setObjectName("h2");
-    disk->addWidget(diskLabel_);
-    bv->addLayout(disk);
-    ramDetail_ = label(QString(), "muted");
-    bv->addWidget(ramDetail_);
-    multiNote_ = label(L("With several clip buttons Clipline records for the most demanding one; clips with less are scaled down when saved."), "muted");
-    bv->addWidget(multiNote_);
-    v->addWidget(box);
-
-    connect(screen, &QComboBox::currentIndexChanged, this, [this, screen, fillRes] {
-        cfg_.monitor = screen->currentData().toString();
-        fillRes();
-        updateRam();
-        emit changed();
-    });
-    connect(res_, &QComboBox::currentIndexChanged, this, [this] { cfg_.height = res_->currentData().toInt(); updateRam(); emit changed(); });
-    connect(fps_, &QComboBox::currentIndexChanged, this, [this] { cfg_.fps = fps_->currentData().toInt(); updateRam(); emit changed(); });
-    connect(group, &QButtonGroup::idClicked, this, [this](int id) { cfg_.quality = id; updateRam(); emit changed(); });
-    updateRam();
-    return w;
-}
-
-// 3: Hotkey + Ton + Autostart
-QWidget* ConfigPages::hotkeyPage() {
-    QVBoxLayout* v;
-    QWidget* w = page(&v);
-    v->addWidget(label(L("Your clip key"), "h1"));
-    v->addWidget(label(L("Click the button and press the combination you want. Works everywhere, even in games."), "muted"));
-    v->addSpacing(6);
-    auto* key = new HotkeyButton(cfg_.hotkey);
-    connect(key, &HotkeyButton::sequenceChanged, this, [this](const QString& s) { cfg_.hotkey = s; checkDuplicates(); emit changed(); });
-    v->addWidget(key);
-
-    // Mehrere Clip-Knöpfe: unter dem ersten ein "+", jeder weitere mit eigener Taste, Länge und Grafik
-    extrasBox_ = new QVBoxLayout;
-    extrasBox_->setSpacing(10);
-    v->addLayout(extrasBox_);
-    rebuildExtras();
-    auto* add = new QPushButton("+   " + L("Add another clip button"));
-    add->setObjectName("dashed");
-    add->setCursor(Qt::PointingHandCursor);
-    connect(add, &QPushButton::clicked, this, [this] {
-        ClipButton b;
-        b.hotkey = freeHotkey(cfg_);
-        b.seconds = 30;
-        b.height = cfg_.height;
-        b.fps = cfg_.fps;
-        b.quality = cfg_.quality;
-        cfg_.extraButtons << b;
-        rebuildExtras();
-        updateRam();
-        emit changed();
-    });
-    v->addWidget(add);
-    v->addWidget(label(L("Several clip buttons: e.g. one for short clips in full quality and one for long clips in lower quality. "
-                         "Each has its own key."), "muted"));
-    dupWarn_ = label(L("Two clip buttons use the same key."));
-    dupWarn_->setStyleSheet(QString("color:%1;font-weight:600;").arg(makePalette(cfg_.accent, cfg_.dark).accent.name()));
-    v->addWidget(dupWarn_);
-    checkDuplicates();
-    v->addSpacing(14);
+    v->addWidget(label(L("Sound"), "h1"));
+    v->addWidget(label(L("What should be heard in your clips?"), "muted"));
+    v->addSpacing(4);
 
     // Regler mit Titel und Prozentangabe (Lautstärken 0..200 %)
     auto volume = [](const QString& title, int value, std::function<void(int)> set) {
@@ -653,7 +638,6 @@ QWidget* ConfigPages::hotkeyPage() {
         return box;
     };
 
-    v->addWidget(label(L("Sound"), "h2"));
     auto* sys = new QCheckBox(L("System sound"));
     sys->setChecked(cfg_.systemAudio && systemAudioSupported());
     sys->setEnabled(systemAudioSupported());
@@ -662,7 +646,7 @@ QWidget* ConfigPages::hotkeyPage() {
     auto* sysVol = volume(L("System sound volume"), cfg_.systemVolume, [this](int p) { cfg_.systemVolume = p; emit changed(); });
     sysVol->setVisible(sys->isChecked());
     v->addWidget(sysVol);
-    v->addSpacing(4);
+    v->addSpacing(8);
 
     auto* form = new QFormLayout;
     auto* mic = new QComboBox;
@@ -672,11 +656,12 @@ QWidget* ConfigPages::hotkeyPage() {
     form->addRow(L("Microphone"), mic);
     v->addLayout(form);
 
-    // Alles, was nur mit Mikrofon Sinn ergibt
-    auto* micBox = new QWidget;
+    // Alles, was nur mit Mikrofon Sinn ergibt - ohne Mikrofon eingeklappt
+    auto* micBox = new QFrame;
+    micBox->setObjectName("card");
     auto* mv = new QVBoxLayout(micBox);
-    mv->setContentsMargins(0, 4, 0, 0);
-    mv->setSpacing(8);
+    mv->setContentsMargins(16, 12, 16, 14);
+    mv->setSpacing(9);
     mv->addWidget(volume(L("Microphone volume"), cfg_.micVolume, [this](int p) { cfg_.micVolume = p; emit changed(); }));
 
     auto* denoise = new QCheckBox(L("Filter out keyboard and mouse clicks (AI noise suppression)"));
@@ -704,16 +689,78 @@ QWidget* ConfigPages::hotkeyPage() {
     mv->addWidget(label(L("Talk normally: the bar should turn green when you speak and stay grey when you are quiet. "
                           "Everything below the line is muted, so background noise stays out of your clips."), "muted"));
 
+    // Mikrofon testen: ein paar Sekunden aufnehmen und mit allen Filtern vorspielen
+    auto* testRow = new QHBoxLayout;
+    auto* test = new QPushButton(L("Test microphone"));
+    test->setCursor(Qt::PointingHandCursor);
+    auto* testHint = label(L("Records 4 seconds and plays them back – exactly as they would sound in a clip."), "muted");
+    testRow->addWidget(test);
+    testRow->addWidget(testHint, 1);
+    mv->addLayout(testRow);
+    connect(test, &QPushButton::clicked, this, [this, test, testHint] {
+        if (!test->isEnabled() || cfg_.mic.isEmpty()) return;
+        test->setEnabled(false);
+        MicTuning t;
+        t.gateDb = cfg_.micGate;
+        t.micVolume = cfg_.micVolume;
+        t.systemVolume = cfg_.systemVolume;
+        t.denoise = cfg_.micDenoise;
+        const QString mic = cfg_.mic, wav = QDir::temp().filePath("clipline-mictest.wav");
+        const QPointer<QPushButton> btn(test);
+        const QPointer<QLabel> hint(testHint);
+        auto* tick = new QTimer(test);
+        auto left = std::make_shared<int>(4);
+        test->setText(L("Speak now… %1").arg(*left));
+        connect(tick, &QTimer::timeout, test, [test, left] {
+            if (--*left > 0) test->setText(L("Speak now… %1").arg(*left));
+        });
+        tick->start(1000);
+        std::thread([=] {
+            QString err;
+            const bool ok = recordMicTest(mic, 4.0, t, wav, &err);
+            QMetaObject::invokeMethod(qApp, [=] {
+                if (!btn) return;
+                tick->deleteLater();
+                if (!ok) {
+                    btn->setEnabled(true);
+                    btn->setText(L("Test microphone"));
+                    if (hint) hint->setText(L("The microphone could not be opened.") + (err.isEmpty() ? QString() : " (" + err + ")"));
+                    return;
+                }
+                btn->setText(L("Playing back…"));
+                playWavFile(wav);
+                QTimer::singleShot(4300, btn, [btn] {
+                    if (!btn) return;
+                    btn->setEnabled(true);
+                    btn->setText(L("Test microphone"));
+                });
+            }, Qt::QueuedConnection);
+        }).detach();
+    });
+
     // Mikrofon stumm per Taste
     mv->addSpacing(4);
     mv->addWidget(label("<b>" + L("Mute key for the microphone") + "</b>"));
+    auto* muteRow = new QHBoxLayout;
     auto* muteKey = new HotkeyButton(cfg_.muteHotkey);
-    muteKey->setMinimumHeight(42);
-    muteKey->setAllowClear(true);
-    connect(muteKey, &HotkeyButton::sequenceChanged, this, [this](const QString& s) { cfg_.muteHotkey = s; emit changed(); });
-    mv->addWidget(muteKey);
-    mv->addWidget(label(L("Press it once and your voice is no longer recorded, press it again to switch the microphone back on. "
-                          "Backspace removes the key."), "muted"));
+    auto* muteClear = new QPushButton(L("Remove"));
+    muteClear->setCursor(Qt::PointingHandCursor);
+    muteClear->setVisible(!cfg_.muteHotkey.isEmpty());
+    muteRow->addWidget(muteKey, 1);
+    muteRow->addWidget(muteClear);
+    mv->addLayout(muteRow);
+    connect(muteKey, &HotkeyButton::sequenceChanged, this, [this, muteClear](const QString& s) {
+        cfg_.muteHotkey = s;
+        muteClear->setVisible(!s.isEmpty());
+        emit changed();
+    });
+    connect(muteClear, &QPushButton::clicked, this, [this, muteKey, muteClear] {
+        muteKey->setSequence(QString());
+        cfg_.muteHotkey.clear();
+        muteClear->hide();
+        emit changed();
+    });
+    mv->addWidget(label(L("Press it once and your voice is no longer recorded, press it again to switch the microphone back on."), "muted"));
     v->addWidget(micBox);
 
     auto showGate = [sensTitle, meter](int db) {
@@ -721,8 +768,8 @@ QWidget* ConfigPages::hotkeyPage() {
         meter->setThreshold(db);
     };
     showGate(cfg_.micGate);
-    micBox->setVisible(!cfg_.mic.isEmpty());
-    meter->setDevice(cfg_.mic);
+    micBox->setVisible(!mic->currentData().toString().isEmpty());
+    meter->setDevice(mic->currentData().toString());
     connect(gate, &QSlider::valueChanged, this, [this, showGate](int db) { cfg_.micGate = db; showGate(db); emit changed(); });
     connect(denoise, &QCheckBox::toggled, this, [this, meter](bool on) {
         cfg_.micDenoise = on;
@@ -740,29 +787,90 @@ QWidget* ConfigPages::hotkeyPage() {
         meter->setDevice(cfg_.mic);
         emit changed();
     });
-    v->addSpacing(10);
-
-    auto* autostart = new QCheckBox(L("Start with the computer (runs in the background)"));
-    autostart->setChecked(cfg_.autostart);
-    connect(autostart, &QCheckBox::toggled, this, [this](bool on) { cfg_.autostart = on; emit changed(); });
-    v->addWidget(autostart);
+    v->addSpacing(12);
     auto* sound = new QCheckBox(L("Play a sound when a clip is saved"));
     sound->setChecked(cfg_.sound);
     connect(sound, &QCheckBox::toggled, this, [this](bool on) { cfg_.sound = on; emit changed(); });
     v->addWidget(sound);
     v->addStretch();
+    return scrollable(w);
+}
 
-    // Die Seite ist lang geworden: bei kleinen Fenstern scrollen statt quetschen
-    auto* scroll = new QScrollArea;
-    scroll->setObjectName("plain");
-    scroll->setWidget(w);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setStyleSheet("QScrollArea#plain { border: none; background: transparent; }"
-                          "QScrollArea#plain > QWidget > QWidget { background: transparent; }");
-    enableSmoothScroll(scroll);
-    return scroll;
+// 3: Clip-Tasten - jede mit eigener Länge, Bildschirm und Grafik, darunter Vorschau und Arbeitsspeicher
+QWidget* ConfigPages::buttonsPage() {
+    QVBoxLayout* v;
+    QWidget* w = page(&v);
+    v->addWidget(label(L("Your clip keys"), "h1"));
+    v->addWidget(label(L("Each key saves its own clip: choose how long it is, which screen and in what quality. "
+                         "Click on the key field and press the key you want."), "muted"));
+    v->addSpacing(4);
+    buttonsBox_ = new QVBoxLayout;
+    buttonsBox_->setSpacing(10);
+    v->addLayout(buttonsBox_);
+    auto* add = new QPushButton("+   " + L("Add another clip button"));
+    add->setObjectName("dashed");
+    add->setCursor(Qt::PointingHandCursor);
+    connect(add, &QPushButton::clicked, this, [this] {
+        ClipButton b;
+        b.hotkey = freeHotkey(cfg_);
+        b.seconds = 30;
+        b.height = cfg_.height;
+        b.fps = cfg_.fps;
+        b.quality = cfg_.quality;
+        b.monitor = cfg_.monitor;
+        cfg_.extraButtons << b;
+        previewIdx_ = int(cfg_.extraButtons.size());
+        rebuildButtons();
+        emit changed();
+    });
+    v->addWidget(add);
+    dupWarn_ = label(L("Two clip buttons use the same key."));
+    dupWarn_->setStyleSheet(QString("color:%1;font-weight:600;").arg(makePalette(cfg_.accent, cfg_.dark).accent.name()));
+    v->addWidget(dupWarn_);
+    v->addWidget(label(L("Tip: the key also works while you hold Shift, Ctrl or Alt (e.g. while running in a game)."), "muted"));
+    v->addSpacing(8);
+
+    previewTitle_ = label(QString(), "h2");
+    v->addWidget(previewTitle_);
+    preview_ = new QualityPreview;
+    preview_->setMinimumHeight(200);
+    v->addWidget(preview_);
+
+    // Arbeitsspeicher
+    auto* box = new QFrame;
+    box->setObjectName("card");
+    auto* bv = new QVBoxLayout(box);
+    bv->setContentsMargins(16, 10, 16, 12);
+    bv->setSpacing(5);
+    auto* top = new QHBoxLayout;
+    top->addWidget(label(L("Estimated RAM"), "muted"));
+    top->addStretch();
+    ramLabel_ = new QLabel;
+    ramLabel_->setObjectName("h2");
+    top->addWidget(ramLabel_);
+    bv->addLayout(top);
+    ramBar_ = new QProgressBar;
+    ramBar_->setRange(0, 2048);
+    ramBar_->setTextVisible(false);
+    ramBar_->setFixedHeight(8);
+    bv->addWidget(ramBar_);
+    auto* disk = new QHBoxLayout;
+    diskTitle_ = label(QString(), "muted");
+    diskTitle_->setWordWrap(false);
+    disk->addWidget(diskTitle_);
+    disk->addStretch();
+    diskLabel_ = new QLabel;
+    diskLabel_->setObjectName("h2");
+    disk->addWidget(diskLabel_);
+    bv->addLayout(disk);
+    ramDetail_ = label(QString(), "muted");
+    bv->addWidget(ramDetail_);
+    multiNote_ = label(L("Each screen is recorded once, for its most demanding clip button; clips with less are scaled down when saved."), "muted");
+    bv->addWidget(multiNote_);
+    v->addWidget(box);
+    v->addStretch();
+    rebuildButtons();
+    return scrollable(w);
 }
 
 // 4: Aussehen
@@ -777,50 +885,55 @@ QWidget* ConfigPages::lookPage() {
     sh->setContentsMargins(0, 0, 0, 0);
     sh->setSpacing(8);
     auto* group = new QButtonGroup(sw);
+    bool known = false;
     for (const QColor& c : accentChoices()) {
         auto* b = new QPushButton;
         b->setObjectName("swatch");
         b->setCheckable(true);
         b->setStyleSheet(QString("background:%1;").arg(c.name()));
-        b->setChecked(c.name().compare(cfg_.accent, Qt::CaseInsensitive) == 0);
+        const bool on = c.name().compare(cfg_.accent, Qt::CaseInsensitive) == 0;
+        known |= on;
+        b->setChecked(on);
         b->setCursor(Qt::PointingHandCursor);
         group->addButton(b);
         sh->addWidget(b);
         connect(b, &QPushButton::clicked, this, [this, c] { cfg_.accent = c.name(); emit lookChanged(); emit changed(); });
     }
+    // Eigene Farbe: jede beliebige über den Farbwähler
+    auto* own = new QPushButton;
+    own->setObjectName("swatch");
+    own->setCheckable(true);
+    own->setChecked(!known);
+    own->setToolTip(L("Any colour…"));
+    own->setCursor(Qt::PointingHandCursor);
+    own->setStyleSheet(known ? QString("background: qconicalgradient(cx:0.5, cy:0.5, angle:90, stop:0 #ff4d4d, stop:0.17 #ffd24d, "
+                                       "stop:0.33 #4dd96b, stop:0.5 #4dd2ff, stop:0.67 #5b6bff, stop:0.83 #d24dff, stop:1 #ff4d4d);")
+                             : QString("background:%1;").arg(cfg_.accent));
+    group->addButton(own);
+    sh->addWidget(own);
+    auto* pick = new QPushButton(L("Any colour…"));
+    pick->setCursor(Qt::PointingHandCursor);
+    sh->addWidget(pick);
+    auto choose = [this, w, own] {
+        const QColor c = QColorDialog::getColor(QColor(cfg_.accent), w, L("Accent colour"));
+        if (!c.isValid()) return;
+        cfg_.accent = c.name();
+        own->setStyleSheet(QString("background:%1;").arg(c.name()));
+        own->setChecked(true);
+        emit lookChanged();
+        emit changed();
+    };
+    connect(pick, &QPushButton::clicked, this, choose);
+    connect(own, &QPushButton::clicked, this, choose);
     sh->addStretch();
     form->addRow(L("Accent colour"), sw);
-    auto* mode = new QWidget;
-    auto* ml = new QHBoxLayout(mode);
-    ml->setContentsMargins(0, 0, 0, 0);
-    ml->setSpacing(0);
-    auto* mg = new QButtonGroup(mode);
-    for (int i = 0; i < 2; ++i) {
-        auto* b = new QPushButton(i == 0 ? L("Dark") : L("Light"));
-        b->setObjectName("seg");
-        b->setCheckable(true);
-        b->setChecked(cfg_.dark == (i == 0));
-        mg->addButton(b, i);
-        ml->addWidget(b);
-    }
-    ml->addStretch();
+    QButtonGroup* mg = nullptr;
+    QWidget* mode = segmented({L("Dark"), L("Light")}, cfg_.dark ? 0 : 1, &mg);
     connect(mg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.dark = id == 0; emit lookChanged(); emit changed(); });
     form->addRow(L("Mode"), mode);
     // Stil: Standard (bisheriges Aussehen) oder Minimal (ruhiger, ohne Rahmen)
-    auto* style = new QWidget;
-    auto* stl = new QHBoxLayout(style);
-    stl->setContentsMargins(0, 0, 0, 0);
-    stl->setSpacing(0);
-    auto* sg = new QButtonGroup(style);
-    for (int i = 0; i < 2; ++i) {
-        auto* b = new QPushButton(i == 0 ? L("Standard") : L("Minimal"));
-        b->setObjectName("seg");
-        b->setCheckable(true);
-        b->setChecked(cfg_.minimal == (i == 1));
-        sg->addButton(b, i);
-        stl->addWidget(b);
-    }
-    stl->addStretch();
+    QButtonGroup* sg = nullptr;
+    QWidget* style = segmented({L("Standard"), L("Minimal")}, cfg_.minimal ? 1 : 0, &sg);
     connect(sg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.minimal = id == 1; emit lookChanged(); emit changed(); });
     form->addRow(L("Style"), style);
     v->addLayout(form);
@@ -832,7 +945,7 @@ QWidget* ConfigPages::lookPage() {
 SetupWizard::SetupWizard(const Config& c, QWidget* parent) : QDialog(parent) {
     setWindowTitle("Clipline");
     setWindowIcon(cliplineIcon());
-    resize(900, 640);
+    resize(920, 680);
     pages_ = new ConfigPages(c, this);
     connect(pages_, &ConfigPages::lookChanged, this, [this] { applyLook(pages_->config()); go(step_); });
 
@@ -850,7 +963,7 @@ SetupWizard::SetupWizard(const Config& c, QWidget* parent) : QDialog(parent) {
     sv->addWidget(logo);
     sv->addWidget(label("Clipline", "h2"));
     sv->addSpacing(22);
-    const QStringList names = {L("Clips folder"), L("Clip length & quality"), L("Hotkey & sound"), L("Look")};
+    const QStringList names = {L("Clips folder"), L("Sound"), L("Clip keys"), L("Look")};
     for (int i = 0; i < names.size(); ++i) {
         auto* l = new QLabel(QString("%1   %2").arg(i + 1).arg(names[i]));
         l->setMinimumHeight(30);
@@ -866,8 +979,8 @@ SetupWizard::SetupWizard(const Config& c, QWidget* parent) : QDialog(parent) {
     rv->setContentsMargins(0, 0, 0, 0);
     stack_ = new QStackedWidget;
     stack_->addWidget(pages_->folderPage(true));
-    stack_->addWidget(pages_->recordingPage());
-    stack_->addWidget(pages_->hotkeyPage());
+    stack_->addWidget(pages_->soundPage());
+    stack_->addWidget(pages_->buttonsPage());
     stack_->addWidget(pages_->lookPage());
     rv->addWidget(stack_, 1);
     auto* nav = new QHBoxLayout;
@@ -905,16 +1018,15 @@ void SetupWizard::go(int step) {
 SettingsDialog::SettingsDialog(const Config& c, QWidget* parent) : QDialog(parent) {
     setWindowTitle(L("Settings") + " – Clipline");
     setWindowIcon(cliplineIcon());
-    resize(760, 660);
+    resize(780, 720);
     pages_ = new ConfigPages(c, this);
     connect(pages_, &ConfigPages::lookChanged, this, [this] { applyLook(pages_->config()); });
     auto* v = new QVBoxLayout(this);
     v->setContentsMargins(18, 18, 18, 18);
     auto* tabs = new QTabWidget;
     tabs->addTab(pages_->folderPage(false), L("General"));
-    // "&" verdoppeln, sonst macht Qt daraus ein Tastenkürzel und es verschwindet
-    tabs->addTab(pages_->recordingPage(), L("Clip length & quality").replace("&", "&&"));
-    tabs->addTab(pages_->hotkeyPage(), L("Hotkey & sound").replace("&", "&&"));
+    tabs->addTab(pages_->soundPage(), L("Sound"));
+    tabs->addTab(pages_->buttonsPage(), L("Clip keys"));
     tabs->addTab(pages_->lookPage(), L("Look"));
     v->addWidget(tabs, 1);
     auto* row = new QHBoxLayout;

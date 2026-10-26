@@ -47,5 +47,37 @@ press
 sleep 6
 if [ "$(count)" -gt "$before" ]; then echo "FAIL old hotkey still saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS old hotkey does nothing any more"; fi
 
+if [ "${CL_BUILD:-current}" = current ]; then
+    # F9 auch mit gehaltenem Shift/Strg, Shift+F10 und Strg+Feststelltaste als eigene Clip-Knöpfe
+    pkill -f -- "$BIN --background"
+    sleep 1
+    new_keys_config
+    QT_QPA_PLATFORM=offscreen dbus-run-session -- "$BIN" --background >> "$OUT/stdout.txt" 2>&1 &
+    sleep 15
+    xdotool key F9
+    check "F9" 9 5
+    sleep 3
+    xdotool keydown shift; sleep 0.1; xdotool key F9; sleep 0.1; xdotool keyup shift
+    check "F9 while Shift is held" 10 5
+    sleep 3
+    xdotool keydown ctrl; sleep 0.1; xdotool key F9; sleep 0.1; xdotool keyup ctrl
+    check "F9 while Ctrl is held" 11 5
+    sleep 3
+    xdotool keydown shift; sleep 0.1; xdotool key F10; sleep 0.1; xdotool keyup shift
+    check "Shift+F10 (clip button 2)" 12 4
+    sleep 3
+    xdotool keydown ctrl; sleep 0.1; xdotool key Caps_Lock; sleep 0.1; xdotool keyup ctrl
+    check "Ctrl+CapsLock (clip button 3)" 13 4
+    # Feststelltaste ist jetzt an - F9 muss trotzdem gehen
+    sleep 3
+    xdotool key F9
+    check "F9 with Caps Lock on" 14 5
+    xdotool key Caps_Lock
+    before=$(count)
+    xdotool key F10
+    sleep 6
+    if [ "$(count)" -gt "$before" ]; then echo "FAIL F10 alone saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS F10 alone does nothing"; fi
+fi
+
 finish
 exit $FAILS

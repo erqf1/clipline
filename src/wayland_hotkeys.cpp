@@ -61,6 +61,23 @@ QString keyName(int key, bool lower) {
     if (key >= Qt::Key_F1 && key <= Qt::Key_F24) return QString("F%1").arg(key - Qt::Key_F1 + 1);
     switch (key) {
     case Qt::Key_Space: return "space";
+    case Qt::Key_Return: case Qt::Key_Enter: return "Return";
+    case Qt::Key_Backspace: return "BackSpace";
+    case Qt::Key_Tab: case Qt::Key_Backtab: return "Tab";
+    case Qt::Key_CapsLock: return "Caps_Lock";
+    case Qt::Key_NumLock: return "Num_Lock";
+    case Qt::Key_Escape: return "Escape";
+    case Qt::Key_Left: return "Left";
+    case Qt::Key_Right: return "Right";
+    case Qt::Key_Up: return "Up";
+    case Qt::Key_Down: return "Down";
+    case Qt::Key_Menu: return "Menu";
+    case Qt::Key_Delete: return "Delete";
+    case Qt::Key_PageUp: return "Prior";
+    case Qt::Key_PageDown: return "Next";
+    case Qt::Key_MediaPlay: case Qt::Key_MediaPause: case Qt::Key_MediaTogglePlayPause: return "XF86AudioPlay";
+    case Qt::Key_MediaNext: return "XF86AudioNext";
+    case Qt::Key_MediaPrevious: return "XF86AudioPrev";
     case Qt::Key_Print: return "Print";
     case Qt::Key_Pause: return "Pause";
     case Qt::Key_Insert: return "Insert";
@@ -253,13 +270,21 @@ QString WaylandHotkeys::idFor(const QString& sequence) {
 // Hyprland/Sway: Taste direkt im Compositor eintragen bzw. wieder austragen (gilt bis zum Neustart des Compositors;
 // Clipline trägt sie bei jedem Start neu ein). Vor dem Eintragen austragen: Reste eines abgestürzten Clipline
 // würden sonst doppelt auslösen.
+// Auch mit zusätzlich gehaltenem Shift/Strg/Alt (z. B. beim Rennen im Spiel) - außer es ist eine andere Clipline-Taste.
+// Alle Varianten melden die eigentliche Taste, damit trigger() sie findet.
 bool WaylandHotkeys::compositorBind(const QString& sequence, bool bind) {
     const QKeyCombination kc = combo(sequence);
-    const Qt::KeyboardModifiers m = kc.keyboardModifiers();
     const QString portable = QKeySequence(sequence).toString(QKeySequence::PortableText);
     const QString cmd = shellQuote(selfPath()) + " --hotkey " + shellQuote(portable);
+    const bool ok = compositorBindOne(kc.keyboardModifiers(), kc.key(), cmd, bind);
+    if (ok)
+        for (const Qt::KeyboardModifiers extra : tolerantModifiers(kc)) compositorBindOne(extra, kc.key(), cmd, bind);
+    return ok;
+}
+
+bool WaylandHotkeys::compositorBindOne(Qt::KeyboardModifiers m, int keyCode, const QString& cmd, bool bind) {
     if (backend_ == Hyprland) {
-        const QString key = keyName(kc.key(), false);
+        const QString key = keyName(keyCode, false);
         if (key.isEmpty()) return false;
         QStringList mods;
         if (m & Qt::ControlModifier) mods << "CTRL";
@@ -271,7 +296,7 @@ bool WaylandHotkeys::compositorBind(const QString& sequence, bool bind) {
         QProcess::execute("hyprctl", {"keyword", "unbind", head});
         return run("hyprctl", {"keyword", "bind", head + ", exec, " + cmd});
     }
-    const QString key = keyName(kc.key(), true);
+    const QString key = keyName(keyCode, true);
     if (key.isEmpty()) return false;
     QStringList parts;
     if (m & Qt::ControlModifier) parts << "Ctrl";

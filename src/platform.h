@@ -4,6 +4,7 @@
 #include <QRect>
 #include <QString>
 #include <QStringList>
+#include <QKeyCombination>
 #include <memory>
 
 // ---------------------------------------------------------------- Bildschirme
@@ -23,6 +24,14 @@ Monitor findMonitor(const QString& id);  // leer/unbekannt = Hauptbildschirm
 QStringList listMicrophones();   // ffmpeg-Gerätenamen
 bool systemAudioSupported();
 
+struct MicTuning {
+    int gateDb = -45;        // Rauschsperre: leiser als das wird stummgeschaltet; <= -80 = aus
+    int micVolume = 100;     // Prozent (0..200)
+    int systemVolume = 100;  // Prozent (0..200)
+    bool denoise = true;     // RNNoise: Tastatur-/Mausklicks und Hintergrundrauschen entfernen
+    bool muted = false;      // Mikrofon stumm (Hotkey)
+};
+
 // ---------------------------------------------------------------- System
 bool setAutostart(bool on);
 QString ffmpegPath();
@@ -31,6 +40,9 @@ void playSaveSound();   // Clip ist gespeichert
 void playErrorSound();  // Speichern ist gescheitert (Hinweise sieht man im Vollbild-Spiel oft nicht)
 // Linux: Hinweis über den Benachrichtigungsdienst des Desktops (auch ohne Tray, z. B. Hyprland); false = nicht möglich
 bool desktopNotify(const QString& title, const QString& text, int ms, bool warning);
+// Mikrofon-Test: einige Sekunden aufnehmen (mit derselben Filterkette wie im Clip) und als WAV speichern
+bool recordMicTest(const QString& mic, double seconds, const MicTuning& tuning, const QString& wavOut, QString* error);
+void playWavFile(const QString& path);
 // Linux: App-ID für Desktop-Datei, Wayland und Portale (Portale verlangen eine ID mit Punkt)
 inline constexpr const char* kLinuxAppId = "win.mert.Clipline";
 
@@ -41,6 +53,14 @@ void appLog(const QString& line);
 QString appLogPath();
 
 // ---------------------------------------------------------------- Globaler Hotkey
+// Eine Taste löst auch aus, wenn dabei zusätzlich Strg/Alt/Shift gedrückt ist (F9 geht auch mit Shift+F9),
+// außer diese Kombination gehört zu einer anderen Clipline-Taste. Die Liste setzt der Controller vor dem Eintragen.
+void setReservedHotkeys(const QStringList& exact);
+QList<Qt::KeyboardModifiers> tolerantModifiers(const QKeyCombination& kc);
+// Darf diese Taste allein (ohne Strg/Alt/Shift) eine Clip-Taste sein? Enter, Buchstaben usw. nicht - die
+// könnte man sonst nirgends mehr tippen
+bool keyAllowedAlone(int key, bool keypad);
+
 class GlobalHotkey : public QObject {
     Q_OBJECT
 public:
@@ -64,13 +84,7 @@ private:
 // Systemton (Loopback) und Mikrofon werden hier gemischt und als EIN Datenstrom (f32le, 48 kHz, Stereo)
 // über eine Named Pipe an ffmpeg gegeben. Jede weitere Echtzeit-Tonquelle, die ffmpeg selbst einliest,
 // bremst die Bildschirmaufnahme stark aus (bis auf ~1 Bild pro Sekunde).
-struct MicTuning {
-    int gateDb = -45;        // Rauschsperre: leiser als das wird stummgeschaltet; <= -80 = aus
-    int micVolume = 100;     // Prozent (0..200)
-    int systemVolume = 100;  // Prozent (0..200)
-    bool denoise = true;     // RNNoise: Tastatur-/Mausklicks und Hintergrundrauschen entfernen
-    bool muted = false;      // Mikrofon stumm (Hotkey)
-};
+
 
 class SystemAudioPipe {
 public:

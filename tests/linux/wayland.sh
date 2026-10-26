@@ -69,6 +69,25 @@ n=$(saves); wtype -M ctrl -M alt -k d -m alt -m ctrl; expect_save "$n" "changed 
 n=$(saves); press; sleep 1
 if [ "$(saves)" -gt "$n" ]; then echo "FAIL old hotkey still saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS old hotkey does nothing any more"; fi
 
+# F9 auch mit gehaltenem Shift/Strg, Shift+F10 und Strg+Feststelltaste als eigene Clip-Knöpfe
+pkill -f -- "$BIN --background"
+sleep 1
+new_keys_config
+"$BIN" --background >> "$OUT/stdout.txt" 2>&1 &
+sleep 8
+saves_of() { grep -c "save: clip button $1 " "$LOG" 2>/dev/null; }
+expect_of() {
+    local btn=$1 before=$2; sleep 3
+    if [ "$(saves_of "$btn")" -gt "$before" ]; then echo "PASS $3"; else echo "FAIL $3"; FAILS=$((FAILS + 1)); fi
+}
+n=$(saves_of 1); wtype -k F9; expect_of 1 "$n" "F9"
+n=$(saves_of 1); wtype -M shift -k F9 -m shift; expect_of 1 "$n" "F9 while Shift is held"
+n=$(saves_of 1); wtype -M ctrl -k F9 -m ctrl; expect_of 1 "$n" "F9 while Ctrl is held"
+n=$(saves_of 2); wtype -M shift -k F10 -m shift; expect_of 2 "$n" "Shift+F10 (clip button 2)"
+n=$(saves_of 3); wtype -M ctrl -k Caps_Lock -m ctrl; expect_of 3 "$n" "Ctrl+CapsLock (clip button 3)"
+n1=$(saves_of 1); n2=$(saves_of 2); wtype -k F10; sleep 3
+if [ "$(saves_of 1)" -gt "$n1" ] || [ "$(saves_of 2)" -gt "$n2" ]; then echo "FAIL F10 alone saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS F10 alone does nothing"; fi
+
 echo "----- portal (wlr) screencopy"
 grep -i -E 'shm|format|buffer|dmabuf|gbm|screencopy|frame|error|fail' "$OUT/xdpw.log" | head -n 40
 finish

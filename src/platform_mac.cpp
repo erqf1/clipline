@@ -7,9 +7,13 @@
 #include <QProcess>
 #include <QRegularExpression>
 #include <QScreen>
+#include "i18n.h"
 #include "platform.h"
 
 #include <Carbon/Carbon.h>
+#include <QVariant>
+#include <utility>
+#include <vector>
 
 QList<Monitor> listMonitors() {
     // avfoundation nummeriert Bildschirme als "Capture screen N" nach den Kameras
@@ -32,7 +36,9 @@ QList<Monitor> listMonitors() {
         m.primary = s == QGuiApplication::primaryScreen();
         m.refresh = s->refreshRate();
         m.avIndex = i < screenIdx.size() ? screenIdx[i] : -1;
-        m.name = QString("%1 %2 · %3×%4").arg(i + 1).arg(m.primary ? "★" : "").arg(m.rect.width()).arg(m.rect.height());
+        // macOS nennt Bildschirme beim Namen ("Built-in Retina Display", "DELL U2720Q")
+        m.name = QString("%1 · %2 · %3×%4").arg(i + 1).arg(s->name()).arg(m.rect.width()).arg(m.rect.height());
+        if (m.primary) m.name += " · " + L("main screen");
         if (m.avIndex >= 0) out << m;
     }
     return out;
@@ -75,30 +81,61 @@ int keyCode(int key) {
     if (key >= Qt::Key_A && key <= Qt::Key_Z) return letters[key - Qt::Key_A];
     if (key >= Qt::Key_0 && key <= Qt::Key_9) return digits[key - Qt::Key_0];
     if (key >= Qt::Key_F1 && key <= Qt::Key_F20) return fkeys[key - Qt::Key_F1];
-    if (key == Qt::Key_Space) return kVK_Space;
-    return -1;
+    switch (key) {
+    case Qt::Key_Space: return kVK_Space;
+    case Qt::Key_Return: case Qt::Key_Enter: return kVK_Return;
+    case Qt::Key_Backspace: return kVK_Delete;
+    case Qt::Key_Tab: case Qt::Key_Backtab: return kVK_Tab;
+    case Qt::Key_Escape: return kVK_Escape;
+    case Qt::Key_Left: return kVK_LeftArrow;
+    case Qt::Key_Right: return kVK_RightArrow;
+    case Qt::Key_Up: return kVK_UpArrow;
+    case Qt::Key_Down: return kVK_DownArrow;
+    case Qt::Key_Delete: return kVK_ForwardDelete;
+    case Qt::Key_Home: return kVK_Home;
+    case Qt::Key_End: return kVK_End;
+    case Qt::Key_PageUp: return kVK_PageUp;
+    case Qt::Key_PageDown: return kVK_PageDown;
+    default: return -1;
+    }
 }
 
-OSStatus hotkeyHandler(EventHandlerCallRef, EventRef, void* userData) {
-    GlobalHotkey* hk = static_cast<GlobalHotkey*>(userData);
+// Jeder Hotkey bekommt alle Tastendrücke gemeldet und prüft über seine eigene ID, ob es seiner war
+OSStatus hotkeyHandler(EventHandlerCallRef, EventRef event, void* userData);
+}  // namespace
+
+struct GlobalHotkey::Impl {
+    std::vector<EventHotKeyRef> refs;
+    EventHandlerRef handler = nullptr;
+    UInt32 uid = 0;
+};
+
+namespace {
+OSStatus hotkeyHandler(EventHandlerCallRef, EventRef event, void* userData) {
+    auto* pair = static_cast<std::pair<GlobalHotkey*, UInt32>*>(userData);
+    EventHotKeyID id{};
+    GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, nullptr, sizeof(id), nullptr, &id);
+    if (id.signature != 'CLPL' || id.id != pair->second) return eventNotHandledErr;
+    GlobalHotkey* hk = pair->first;
     QMetaObject::invokeMethod(hk, [hk] { emit hk->activated(); }, Qt::QueuedConnection);
     return noErr;
 }
 }  // namespace
 
-struct GlobalHotkey::Impl {
-    EventHotKeyRef ref = nullptr;
-    EventHandlerRef handler = nullptr;
-};
-
 GlobalHotkey::GlobalHotkey(QObject* parent) : QObject(parent), d(new Impl) {
+    static UInt32 counter = 0;
+    d->uid = ++counter;
     EventTypeSpec spec{kEventClassKeyboard, kEventHotKeyPressed};
-    InstallApplicationEventHandler(&hotkeyHandler, 1, &spec, this, &d->handler);
+    // Lebt so lange wie der Hotkey (wird im Destruktor mit dem Handler entfernt)
+    auto* pair = new std::pair<GlobalHotkey*, UInt32>(this, d->uid);
+    InstallApplicationEventHandler(&hotkeyHandler, 1, &spec, pair, &d->handler);
+    setProperty("_clipline_pair", QVariant::fromValue(static_cast<void*>(pair)));
 }
 
 GlobalHotkey::~GlobalHotkey() {
     clear();
     if (d->handler) RemoveEventHandler(d->handler);
+    delete static_cast<std::pair<GlobalHotkey*, UInt32>*>(property("_clipline_pair").value<void*>());
 }
 
 bool GlobalHotkey::supported() { return true; }
@@ -110,17 +147,25 @@ bool GlobalHotkey::set(const QString& sequence) {
     const QKeyCombination kc = seq[0];
     const int code = keyCode(kc.key());
     if (code < 0) return false;
-    UInt32 mods = 0;
-    const Qt::KeyboardModifiers m = kc.keyboardModifiers();
-    if (m & Qt::ControlModifier) mods |= cmdKey;   // Qt: Ctrl = Command auf dem Mac
-    if (m & Qt::MetaModifier) mods |= controlKey;
-    if (m & Qt::AltModifier) mods |= optionKey;
-    if (m & Qt::ShiftModifier) mods |= shiftKey;
-    EventHotKeyID id{'CLPL', 1};
-    return RegisterEventHotKey(UInt32(code), mods, id, GetApplicationEventTarget(), 0, &d->ref) == noErr;
+    auto macMods = [](Qt::KeyboardModifiers m) {
+        UInt32 mods = 0;
+        if (m & Qt::ControlModifier) mods |= cmdKey;   // Qt: Ctrl = Command auf dem Mac
+        if (m & Qt::MetaModifier) mods |= controlKey;
+        if (m & Qt::AltModifier) mods |= optionKey;
+        if (m & Qt::ShiftModifier) mods |= shiftKey;
+        return mods;
+    };
+    const EventHotKeyID id{'CLPL', d->uid};
+    EventHotKeyRef ref = nullptr;
+    if (RegisterEventHotKey(UInt32(code), macMods(kc.keyboardModifiers()), id, GetApplicationEventTarget(), 0, &ref) != noErr) return false;
+    d->refs.push_back(ref);
+    // Auch mit zusätzlich gedrückten Tasten (z. B. Shift) auslösen
+    for (const Qt::KeyboardModifiers extra : tolerantModifiers(kc))
+        if (RegisterEventHotKey(UInt32(code), macMods(extra), id, GetApplicationEventTarget(), 0, &ref) == noErr) d->refs.push_back(ref);
+    return true;
 }
 
 void GlobalHotkey::clear() {
-    if (d->ref) UnregisterEventHotKey(d->ref);
-    d->ref = nullptr;
+    for (EventHotKeyRef r : d->refs) UnregisterEventHotKey(r);
+    d->refs.clear();
 }

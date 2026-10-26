@@ -40,6 +40,8 @@ jobs:
           cmake --build build
       - name: Test
         run: bash tests/linux/${{ matrix.session }}.sh build/clipline "$RUNNER_TEMP/cl"
+        env:
+          CL_BUILD: ${{ matrix.build }}
         continue-on-error: ${{ matrix.build != 'current' }}
       - name: Logs
         if: always()

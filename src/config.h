@@ -3,14 +3,15 @@
 #include <QSize>
 #include <QString>
 
-// Ein Clip-Knopf: eigene Taste, Länge und Grafik. Knopf 1 sind die Hauptfelder in Config (hotkey, clipSeconds,
-// height, fps, quality), weitere stehen in Config::extraButtons.
+// Ein Clip-Knopf: eigene Taste, Länge, Bildschirm und Grafik. Knopf 1 sind die Hauptfelder in Config (hotkey,
+// clipSeconds, monitor, height, fps, quality), weitere stehen in Config::extraButtons.
 struct ClipButton {
     QString hotkey;
     int seconds = 30;
     int height = 0;   // 0 = native Auflösung
     int fps = 60;
     int quality = 1;  // 0 = klein, 1 = ausgewogen, 2 = hoch
+    QString monitor;  // Bildschirm-ID, leer = Hauptbildschirm
 };
 
 // Alle Einstellungen von Clipline, gespeichert per QSettings("WSoftware", "Clipline").
@@ -27,7 +28,7 @@ struct Config {
     int micVolume = 100;      // Prozent (0..200)
     int systemVolume = 100;   // Prozent (0..200)
     bool micDenoise = true;   // Tastatur-/Mausklicks und Rauschen aus dem Mikrofon entfernen
-    QString hotkey = "Ctrl+Alt+S";
+    QString hotkey = "F9";
     QString muteHotkey = "Ctrl+Alt+M";  // Mikrofon stumm/an, leer = keiner
     QString accent = "#ff4d6d";
     bool minimal = false;     // Stil Minimal statt Standard
@@ -43,9 +44,12 @@ struct Config {
     void save() const;
     ClipButton mainButton() const;
     QList<ClipButton> allButtons() const;  // Knopf 1 zuerst
-    // Was wirklich aufgenommen wird: Auflösung, Bildrate, Qualität und Länge des anspruchsvollsten Knopfs.
-    // Knöpfe mit weniger werden beim Speichern aus dieser Aufnahme kleiner gerechnet.
-    Config recordingConfig() const;
+    // Was wirklich aufgenommen wird - pro Bildschirm eine Aufnahme: Auflösung, Bildrate, Qualität und Länge des
+    // anspruchsvollsten Knopfs auf diesem Bildschirm. Knöpfe mit weniger werden beim Speichern kleiner gerechnet.
+    QStringList recordingMonitors() const;            // Bildschirme, die ein Knopf braucht (Knopf 1 zuerst)
+    Config recordingConfig(const QString& monitor) const;
+    Config recordingConfig() const { return recordingConfig(recordingMonitors().value(0)); }
+    QString buttonMonitor(int i) const;               // aufgelöste Bildschirm-ID von Knopf i (0 = Knopf 1)
     Config withButton(const ClipButton& b) const;  // Länge/Grafik dieses Knopfs (für Schätzungen)
 };
 

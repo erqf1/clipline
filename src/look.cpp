@@ -1,5 +1,13 @@
 #include "look.h"
 
+#include <QAbstractSpinBox>
+#include <QApplication>
+#include <QComboBox>
+#include <QDir>
+#include <QFileInfo>
+#include <QImage>
+#include <QScrollBar>
+
 #include <algorithm>
 #include <QAbstractScrollArea>
 #include <QScrollBar>
@@ -85,9 +93,8 @@ QComboBox:hover, QLineEdit:hover { border-color: @muted@; }
 QComboBox:focus, QLineEdit:focus { border-color: @muted@; }
 QComboBox::drop-down { border: none; width: 22px; }
 QComboBox QAbstractItemView { background: @panel@; border: 1px solid @border@; outline: 0; selection-background-color: @accent@; selection-color: @acctext@; }
-QCheckBox { spacing: 9px; }
-QCheckBox::indicator { width: 18px; height: 18px; border-radius: 5px; border: 1px solid @border@; background: @panel2@; }
-QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
+QCheckBox { spacing: 10px; }
+@toggle@
 QSlider::groove:horizontal { height: 4px; background: @border@; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: @accent@; border-radius: 2px; }
 QSlider::handle:horizontal { width: 16px; height: 16px; margin: -6px 0; background: @accent@; border-radius: 8px; }
@@ -146,9 +153,8 @@ QComboBox, QLineEdit, QKeySequenceEdit { background: @panel2@; border: 1px solid
 QComboBox:hover, QLineEdit:hover { border-color: @accent@; }
 QComboBox::drop-down { border: none; width: 22px; }
 QComboBox QAbstractItemView { background: @panel@; border: 1px solid @border@; outline: 0; selection-background-color: @accent@; selection-color: @acctext@; }
-QCheckBox { spacing: 9px; }
-QCheckBox::indicator { width: 18px; height: 18px; border-radius: 5px; border: 1px solid @border@; background: @panel2@; }
-QCheckBox::indicator:checked { background: @accent@; border-color: @accent@; }
+QCheckBox { spacing: 10px; }
+@toggle@
 QSlider::groove:horizontal { height: 6px; background: @border@; border-radius: 3px; }
 QSlider::sub-page:horizontal { background: @accent@; border-radius: 3px; }
 QSlider::handle:horizontal { width: 20px; height: 20px; margin: -7px 0; background: @text@; border-radius: 10px; }
@@ -177,8 +183,45 @@ QPushButton#dashed:hover { border-color: @accent@; color: @text@; }
 QPushButton#flat:hover { background: @panel2@; }
 )";
 
+// Schalter statt Kästchen: an = Akzentfarbe mit Knopf rechts, aus = grau mit Knopf links - auf einen Blick klar.
+// Qt-Stylesheets brauchen dafür Bilddateien; die werden passend zu den Farben einmal gezeichnet (@2x für HiDPI).
+static QString toggleSheet(const Palette& p) {
+    const QString dir = QDir::temp().filePath("clipline-ui");
+    QDir().mkpath(dir);
+    const QString key = QString("%1%2%3").arg(p.accent.name().mid(1), p.border.name().mid(1), p.panel.name().mid(1));
+    auto draw = [&](bool on, bool enabled, int scale) {
+        const QString path = QString("%1/toggle-%2-%3%4%5.png").arg(dir, key, on ? "on" : "off", enabled ? "" : "-dis", scale == 2 ? "@2x" : "");
+        if (QFileInfo::exists(path)) return;
+        QImage img(38 * scale, 22 * scale, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::transparent);
+        QPainter g(&img);
+        g.setRenderHint(QPainter::Antialiasing);
+        g.scale(scale, scale);
+        g.setOpacity(enabled ? 1.0 : 0.45);
+        const QRectF track(1, 2, 36, 18);
+        g.setPen(on ? Qt::NoPen : QPen(p.muted, 1.2));
+        g.setBrush(on ? p.accent : p.panel);
+        g.drawRoundedRect(track, 9, 9);
+        g.setPen(Qt::NoPen);
+        g.setBrush(on ? p.accentText : p.muted);
+        g.drawEllipse(QPointF(on ? 28 : 10, 11), 6.5, 6.5);
+        g.end();
+        img.save(path);
+    };
+    for (bool on : {false, true})
+        for (bool en : {true, false})
+            for (int sc : {1, 2}) draw(on, en, sc);
+    auto url = [&](const char* state) { return QString("%1/toggle-%2-%3.png").arg(dir, key, state); };
+    return QString("QCheckBox::indicator { width: 38px; height: 22px; border: none; background: transparent; image: url(%1); }\n"
+                   "QCheckBox::indicator:checked { image: url(%2); }\n"
+                   "QCheckBox::indicator:disabled { image: url(%3); }\n"
+                   "QCheckBox::indicator:checked:disabled { image: url(%4); }\n")
+        .arg(url("off"), url("on"), url("off-dis"), url("on-dis"));
+}
+
 QString styleSheet(const Palette& p) {
     QString s = QString::fromUtf8(g_minimal ? kMinimalSheet : kStandardSheet);
+    s.replace("@toggle@", toggleSheet(p));
     s.replace("@bg@", p.bg.name()).replace("@panel@", p.panel.name()).replace("@panel2@", p.panel2.name())
         .replace("@border@", p.border.name()).replace("@text@", p.text.name()).replace("@muted@", p.muted.name())
         .replace("@accent2@", p.accent.lighter(112).name()).replace("@accent@", p.accent.name())
@@ -227,6 +270,41 @@ private:
 }  // namespace
 
 void enableSmoothScroll(QAbstractScrollArea* area) { new SmoothScroller(area); }
+
+// ---------------------------------------------------------------- Kein Verstellen per Mausrad
+// Beim Durchscrollen der Einstellungen hat das Mausrad sonst Auswahllisten, Regler und Zahlenfelder verstellt,
+// sobald der Zeiger darüber lag. Jetzt scrollt das Rad immer die Seite; verstellt wird nur per Klick/Ziehen.
+namespace {
+class NoWheelChange : public QObject {
+protected:
+    bool eventFilter(QObject* o, QEvent* e) override {
+        if (e->type() != QEvent::Wheel) return false;
+        auto* w = qobject_cast<QWidget*>(o);
+        if (!w) return false;
+        QWidget* ctl = nullptr;
+        for (QWidget* x = w; x; x = x->parentWidget()) {
+            if (qobject_cast<QComboBox*>(x) || qobject_cast<QAbstractSpinBox*>(x) ||
+                (qobject_cast<QAbstractSlider*>(x) && !qobject_cast<QScrollBar*>(x))) {
+                ctl = x;
+                break;
+            }
+            if (x->isWindow()) break;
+        }
+        if (!ctl) return false;
+        // Die aufgeklappte Liste einer Auswahl darf weiter scrollen
+        if (w->window() != ctl->window()) return false;
+        for (QWidget* x = ctl->parentWidget(); x; x = x->parentWidget()) {
+            if (auto* area = qobject_cast<QAbstractScrollArea*>(x)) {
+                QCoreApplication::sendEvent(area->viewport(), e);
+                return true;
+            }
+        }
+        return true;
+    }
+};
+}  // namespace
+
+void installNoWheelChange() { qApp->installEventFilter(new NoWheelChange); }
 
 // ---------------------------------------------------------------- Logos
 // Clipline: Koralle -> Violett, weißer Rückspul-Kreis mit Aufnahmepunkt

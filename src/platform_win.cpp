@@ -8,6 +8,8 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QUuid>
+#include <QMap>
+#include "i18n.h"
 #include "platform.h"
 extern "C" {
 #include "rnnoise.h"
@@ -55,6 +57,36 @@ BOOL CALLBACK monitorProc(HMONITOR hm, HDC, LPRECT, LPARAM lp) {
 }
 }  // namespace
 
+// Echte Monitornamen ("DELL U2720Q") aus der Windows-Anzeigekonfiguration, Schlüssel = \\.\DISPLAYn
+static QMap<QString, QString> friendlyMonitorNames() {
+    QMap<QString, QString> out;
+    UINT32 np = 0, nm = 0;
+    if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &np, &nm) != ERROR_SUCCESS) return out;
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(np);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(nm);
+    if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &np, paths.data(), &nm, modes.data(), nullptr) != ERROR_SUCCESS) return out;
+    for (UINT32 i = 0; i < np; ++i) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME src{};
+        src.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        src.header.size = sizeof(src);
+        src.header.adapterId = paths[i].sourceInfo.adapterId;
+        src.header.id = paths[i].sourceInfo.id;
+        DISPLAYCONFIG_TARGET_DEVICE_NAME tgt{};
+        tgt.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        tgt.header.size = sizeof(tgt);
+        tgt.header.adapterId = paths[i].targetInfo.adapterId;
+        tgt.header.id = paths[i].targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&src.header) != ERROR_SUCCESS || DisplayConfigGetDeviceInfo(&tgt.header) != ERROR_SUCCESS) continue;
+        QString name = QString::fromWCharArray(tgt.monitorFriendlyDeviceName).trimmed();
+        if (name.isEmpty() && (tgt.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL ||
+                               tgt.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
+                               tgt.outputTechnology == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED))
+            name = L("Built-in display");
+        if (!name.isEmpty()) out[QString::fromWCharArray(src.viewGdiDeviceName)] = name;
+    }
+    return out;
+}
+
 QList<Monitor> listMonitors() {
     EnumCtx ctx;
     EnumDisplayMonitors(nullptr, nullptr, monitorProc, reinterpret_cast<LPARAM>(&ctx));
@@ -83,10 +115,12 @@ QList<Monitor> listMonitors() {
         if (a.primary != b.primary) return a.primary;
         return a.rect.x() < b.rect.x();
     });
+    const QMap<QString, QString> names = friendlyMonitorNames();
     for (int i = 0; i < ctx.list.size(); ++i) {
         Monitor& m = ctx.list[i];
-        m.name = QString("%1 %2 · %3×%4 · %5 Hz").arg(i + 1).arg(m.primary ? "★" : "").arg(m.rect.width())
-                     .arg(m.rect.height()).arg(int(m.refresh));
+        const QString model = names.value(m.id, L("Screen %1").arg(i + 1));
+        m.name = QString("%1 · %2 · %3×%4 · %5 Hz").arg(i + 1).arg(model).arg(m.rect.width()).arg(m.rect.height()).arg(int(m.refresh));
+        if (m.primary) m.name += " · " + L("main screen");
     }
     return ctx.list;
 }
@@ -170,11 +204,42 @@ void playErrorSound() {
 
 // ---------------------------------------------------------------- Globaler Hotkey
 namespace {
-UINT vkFor(int key) {
+UINT vkFor(int key, bool keypad) {
+    if (keypad) {
+        if (key >= Qt::Key_0 && key <= Qt::Key_9) return UINT(VK_NUMPAD0 + (key - Qt::Key_0));
+        switch (key) {
+        case Qt::Key_Plus: return VK_ADD;
+        case Qt::Key_Minus: return VK_SUBTRACT;
+        case Qt::Key_Asterisk: return VK_MULTIPLY;
+        case Qt::Key_Slash: return VK_DIVIDE;
+        case Qt::Key_Period: case Qt::Key_Comma: return VK_DECIMAL;
+        case Qt::Key_Enter: case Qt::Key_Return: return VK_RETURN;
+        default: break;
+        }
+    }
     if (key >= Qt::Key_A && key <= Qt::Key_Z) return UINT('A' + (key - Qt::Key_A));
     if (key >= Qt::Key_0 && key <= Qt::Key_9) return UINT('0' + (key - Qt::Key_0));
     if (key >= Qt::Key_F1 && key <= Qt::Key_F24) return UINT(VK_F1 + (key - Qt::Key_F1));
     switch (key) {
+    case Qt::Key_Return: case Qt::Key_Enter: return VK_RETURN;
+    case Qt::Key_Backspace: return VK_BACK;
+    case Qt::Key_Tab: case Qt::Key_Backtab: return VK_TAB;
+    case Qt::Key_CapsLock: return VK_CAPITAL;
+    case Qt::Key_NumLock: return VK_NUMLOCK;
+    case Qt::Key_Escape: return VK_ESCAPE;
+    case Qt::Key_Left: return VK_LEFT;
+    case Qt::Key_Right: return VK_RIGHT;
+    case Qt::Key_Up: return VK_UP;
+    case Qt::Key_Down: return VK_DOWN;
+    case Qt::Key_Menu: return VK_APPS;
+    case Qt::Key_Plus: return VK_OEM_PLUS;
+    case Qt::Key_Minus: return VK_OEM_MINUS;
+    case Qt::Key_Comma: return VK_OEM_COMMA;
+    case Qt::Key_Period: return VK_OEM_PERIOD;
+    case Qt::Key_MediaPlay: case Qt::Key_MediaPause: case Qt::Key_MediaTogglePlayPause: return VK_MEDIA_PLAY_PAUSE;
+    case Qt::Key_MediaNext: return VK_MEDIA_NEXT_TRACK;
+    case Qt::Key_MediaPrevious: return VK_MEDIA_PREV_TRACK;
+    case Qt::Key_MediaStop: return VK_MEDIA_STOP;
     case Qt::Key_Space: return VK_SPACE;
     case Qt::Key_Print: return VK_SNAPSHOT;
     case Qt::Key_Pause: return VK_PAUSE;
@@ -202,15 +267,16 @@ public:
 
 struct GlobalHotkey::Impl {
     HotkeyFilter filter;
-    int id = 0;
-    bool registered = false;
+    int id = 0;                 // erste von 8 IDs: genaue Kombination + bis zu 7 mit zusätzlichem Strg/Alt/Shift
+    std::vector<int> ids;       // tatsächlich eingetragen
 };
 
 GlobalHotkey::GlobalHotkey(QObject* parent) : QObject(parent), d(new Impl) {
     static int counter = 0x4C50;
-    d->id = ++counter;
+    counter += 8;
+    d->id = counter;
     d->filter.onHotkey = [this](int id) {
-        if (id != d->id) return false;
+        if (std::find(d->ids.begin(), d->ids.end(), id) == d->ids.end()) return false;
         emit activated();
         return true;
     };
@@ -229,21 +295,31 @@ bool GlobalHotkey::set(const QString& sequence) {
     const QKeySequence seq(sequence);
     if (seq.isEmpty()) return false;
     const QKeyCombination kc = seq[0];
-    const UINT vk = vkFor(kc.key());
+    const UINT vk = vkFor(kc.key(), kc.keyboardModifiers() & Qt::KeypadModifier);
     if (!vk) return false;
-    UINT mods = MOD_NOREPEAT;
-    const Qt::KeyboardModifiers m = kc.keyboardModifiers();
-    if (m & Qt::ControlModifier) mods |= MOD_CONTROL;
-    if (m & Qt::AltModifier) mods |= MOD_ALT;
-    if (m & Qt::ShiftModifier) mods |= MOD_SHIFT;
-    if (m & Qt::MetaModifier) mods |= MOD_WIN;
-    d->registered = RegisterHotKey(nullptr, d->id, mods, vk) != 0;
-    return d->registered;
+    auto modsFor = [](Qt::KeyboardModifiers m) {
+        UINT mods = MOD_NOREPEAT;
+        if (m & Qt::ControlModifier) mods |= MOD_CONTROL;
+        if (m & Qt::AltModifier) mods |= MOD_ALT;
+        if (m & Qt::ShiftModifier) mods |= MOD_SHIFT;
+        if (m & Qt::MetaModifier) mods |= MOD_WIN;
+        return mods;
+    };
+    if (!RegisterHotKey(nullptr, d->id, modsFor(kc.keyboardModifiers()), vk)) return false;
+    d->ids.push_back(d->id);
+    // Auch mit zusätzlich gedrücktem Strg/Alt/Shift auslösen (z. B. Shift beim Laufen im Spiel). Wenn ein anderes
+    // Programm eine dieser Kombinationen schon hat, bleibt sie eben bei ihm.
+    int next = d->id + 1;
+    for (const Qt::KeyboardModifiers extra : tolerantModifiers(kc)) {
+        if (RegisterHotKey(nullptr, next, modsFor(extra), vk)) d->ids.push_back(next);
+        ++next;
+    }
+    return true;
 }
 
 void GlobalHotkey::clear() {
-    if (d->registered) UnregisterHotKey(nullptr, d->id);
-    d->registered = false;
+    for (int id : d->ids) UnregisterHotKey(nullptr, id);
+    d->ids.clear();
 }
 
 // ---------------------------------------------------------------- Ton: WASAPI (Systemton + Mikrofon) -> Mischer -> Named Pipe -> ffmpeg
@@ -701,6 +777,62 @@ void MicLevelMeter::stop() {
 
 float MicLevelMeter::levelDb() const { return d->level; }
 bool micMeterSupported() { return true; }
+
+// Mikrofon testen: N Sekunden über WASAPI aufnehmen, durch dieselbe Kette wie im Clip (Klick-Filter, Sperre,
+// Lautstärke) schicken und als 16-Bit-WAV speichern
+bool recordMicTest(const QString& micName, double seconds, const MicTuning& tuning, const QString& wavOut, QString* error) {
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    IMMDeviceEnumerator* en = nullptr;
+    Capture mic;
+    bool ok = false;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+                                   reinterpret_cast<void**>(&en)))) {
+        IMMDevice* dev = findCaptureDevice(en, micName);
+        if (dev) ok = mic.open(dev, false);
+        release(dev);
+    }
+    std::vector<float> all;
+    if (ok) {
+        MicChain chain;
+        std::vector<float> in, out;
+        const size_t want = size_t(seconds * kRate) * 2;
+        const DWORD t0 = GetTickCount();
+        while (all.size() < want && GetTickCount() - t0 < DWORD(seconds * 1000 + 3000)) {
+            in.clear();
+            out.clear();
+            mic.read(in);
+            chain.process(in, out, tuning);
+            all.insert(all.end(), out.begin(), out.end());
+            Sleep(20);
+        }
+    }
+    mic.close();
+    release(en);
+    CoUninitialize();
+    if (!ok || all.empty()) {
+        if (error) *error = L("The microphone could not be opened.");
+        return false;
+    }
+    const uint32_t n = uint32_t(all.size());
+    QFile f(wavOut);
+    if (!f.open(QIODevice::WriteOnly)) return false;
+    auto u32 = [&](uint32_t v) { f.write(reinterpret_cast<const char*>(&v), 4); };
+    auto u16 = [&](uint16_t v) { f.write(reinterpret_cast<const char*>(&v), 2); };
+    f.write("RIFF");
+    u32(36 + n * 2);
+    f.write("WAVEfmt ");
+    u32(16); u16(1); u16(2); u32(kRate); u32(kRate * 4); u16(4); u16(16);
+    f.write("data");
+    u32(n * 2);
+    std::vector<int16_t> pcm(n);
+    for (uint32_t i = 0; i < n; ++i) pcm[i] = int16_t(std::clamp(all[i], -1.0f, 1.0f) * 32767.0f);
+    f.write(reinterpret_cast<const char*>(pcm.data()), qint64(n) * 2);
+    return true;
+}
+
+void playWavFile(const QString& path) {
+    PlaySoundW(reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+}
 
 bool processMicFile(const QString& inRaw, const QString& outRaw, const MicTuning& tuning) {
     QFile in(inRaw), out(outRaw);

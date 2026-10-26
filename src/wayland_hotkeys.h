@@ -51,6 +51,7 @@ private:
         QString sequence, description;
     };
     bool compositorBind(const QString& sequence, bool bind);
+    bool compositorBindOne(Qt::KeyboardModifiers m, int keyCode, const QString& cmd, bool bind);
     void watchCompositor();
     void rebindCompositor();
     void portalRebind();

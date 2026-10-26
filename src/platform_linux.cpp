@@ -17,6 +17,7 @@
 #include <atomic>
 #include <thread>
 #include "platform.h"
+#include "i18n.h"
 #include "wayland_hotkeys.h"
 
 static QRect x11RootRect();  // X11: ganzer Bildschirm in Pixeln, leer = kein X11
@@ -32,8 +33,11 @@ QList<Monitor> listMonitors() {
         m.rect = QRect(s->geometry().topLeft() * dpr, s->geometry().size() * dpr);
         m.primary = s == QGuiApplication::primaryScreen();
         m.refresh = s->refreshRate();
-        m.name = QString("%1 %2 · %3×%4 · %5 Hz").arg(i + 1).arg(m.primary ? "★" : "").arg(m.rect.width())
-                     .arg(m.rect.height()).arg(int(m.refresh));
+        // Monitorname aus den EDID-Daten (Hersteller + Modell), sonst der Anschluss ("HDMI-1")
+        QString model = (s->manufacturer() + " " + s->model()).trimmed();
+        if (model.isEmpty()) model = s->name();
+        m.name = QString("%1 · %2 · %3×%4 · %5 Hz").arg(i + 1).arg(model).arg(m.rect.width()).arg(m.rect.height()).arg(int(m.refresh));
+        if (m.primary) m.name += " · " + L("main screen");
         out << m;
     }
     std::stable_sort(out.begin(), out.end(), [](const Monitor& a, const Monitor& b) { return a.primary && !b.primary; });
@@ -97,14 +101,49 @@ void playErrorSound() { playNamed("dialog-warning", "dialog-warning.oga"); }
 #ifdef HAVE_X11
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#include <X11/XF86keysym.h>
 #include <sys/select.h>
 
 namespace {
-unsigned long keysymFor(int key) {
+unsigned long keysymFor(int key, bool keypad) {
+    if (keypad) {
+        if (key >= Qt::Key_0 && key <= Qt::Key_9) return XK_KP_0 + (key - Qt::Key_0);
+        switch (key) {
+        case Qt::Key_Plus: return XK_KP_Add;
+        case Qt::Key_Minus: return XK_KP_Subtract;
+        case Qt::Key_Asterisk: return XK_KP_Multiply;
+        case Qt::Key_Slash: return XK_KP_Divide;
+        case Qt::Key_Period: case Qt::Key_Comma: return XK_KP_Decimal;
+        case Qt::Key_Enter: case Qt::Key_Return: return XK_KP_Enter;
+        default: break;
+        }
+    }
     if (key >= Qt::Key_A && key <= Qt::Key_Z) return XK_a + (key - Qt::Key_A);
     if (key >= Qt::Key_0 && key <= Qt::Key_9) return XK_0 + (key - Qt::Key_0);
     if (key >= Qt::Key_F1 && key <= Qt::Key_F24) return XK_F1 + (key - Qt::Key_F1);
     switch (key) {
+    case Qt::Key_Return: case Qt::Key_Enter: return XK_Return;
+    case Qt::Key_Backspace: return XK_BackSpace;
+    case Qt::Key_Tab: case Qt::Key_Backtab: return XK_Tab;
+    case Qt::Key_CapsLock: return XK_Caps_Lock;
+    case Qt::Key_NumLock: return XK_Num_Lock;
+    case Qt::Key_Escape: return XK_Escape;
+    case Qt::Key_Left: return XK_Left;
+    case Qt::Key_Right: return XK_Right;
+    case Qt::Key_Up: return XK_Up;
+    case Qt::Key_Down: return XK_Down;
+    case Qt::Key_Menu: return XK_Menu;
+    case Qt::Key_PageUp: return XK_Prior;
+    case Qt::Key_PageDown: return XK_Next;
+    case Qt::Key_Delete: return XK_Delete;
+    case Qt::Key_Plus: return XK_plus;
+    case Qt::Key_Minus: return XK_minus;
+    case Qt::Key_Comma: return XK_comma;
+    case Qt::Key_Period: return XK_period;
+    case Qt::Key_MediaPlay: case Qt::Key_MediaPause: case Qt::Key_MediaTogglePlayPause: return XF86XK_AudioPlay;
+    case Qt::Key_MediaNext: return XF86XK_AudioNext;
+    case Qt::Key_MediaPrevious: return XF86XK_AudioPrev;
+    case Qt::Key_MediaStop: return XF86XK_AudioStop;
     case Qt::Key_Space: return XK_space;
     case Qt::Key_Print: return XK_Print;
     case Qt::Key_Pause: return XK_Pause;
@@ -159,14 +198,23 @@ bool GlobalHotkey::set(const QString& sequence) {
         return d->wayland;
     }
     const QKeyCombination kc = seq[0];
-    const unsigned long sym = keysymFor(kc.key());
+    const unsigned long sym = keysymFor(kc.key(), kc.keyboardModifiers() & Qt::KeypadModifier);
     if (!sym) return false;
-    unsigned int mods = 0;
+    auto xmods = [](Qt::KeyboardModifiers m) {
+        unsigned int mods = 0;
+        if (m & Qt::ControlModifier) mods |= ControlMask;
+        if (m & Qt::AltModifier) mods |= Mod1Mask;
+        if (m & Qt::ShiftModifier) mods |= ShiftMask;
+        if (m & Qt::MetaModifier) mods |= Mod4Mask;
+        return mods;
+    };
+    // Gruppen-Bitmaske (Strg, Alt, Shift, Super) für die Abfrage des Tastaturzustands
+    auto groups = [](Qt::KeyboardModifiers m) {
+        return (m & Qt::ControlModifier ? 1 : 0) | (m & Qt::AltModifier ? 2 : 0) | (m & Qt::ShiftModifier ? 4 : 0) | (m & Qt::MetaModifier ? 8 : 0);
+    };
     const Qt::KeyboardModifiers m = kc.keyboardModifiers();
-    if (m & Qt::ControlModifier) mods |= ControlMask;
-    if (m & Qt::AltModifier) mods |= Mod1Mask;
-    if (m & Qt::ShiftModifier) mods |= ShiftMask;
-    if (m & Qt::MetaModifier) mods |= Mod4Mask;
+    const unsigned int mods = xmods(m);
+    const QList<Qt::KeyboardModifiers> extras = tolerantModifiers(kc);
 
     Display* dpy = XOpenDisplay(nullptr);
     if (!dpy) return false;
@@ -184,18 +232,28 @@ bool GlobalHotkey::set(const QString& sequence) {
         XCloseDisplay(dpy);
         return false;
     }
+    // Auch mit zusätzlich gedrücktem Strg/Alt/Shift (was schon ein anderes Programm hat, bleibt bei ihm)
+    old = XSetErrorHandler(onXError);
+    for (const Qt::KeyboardModifiers e : extras)
+        for (unsigned int extra : {0u, unsigned(LockMask), unsigned(Mod2Mask), unsigned(LockMask | Mod2Mask)})
+            XGrabKey(dpy, code, xmods(e) | extra, root, True, GrabModeAsync, GrabModeAsync);
+    XSync(dpy, False);
+    XSetErrorHandler(old);
+    g_grabFailed = false;
+    unsigned allowed = 1u << groups(m);  // erlaubte Kombinationen der vier Gruppen als Bitmenge
+    for (const Qt::KeyboardModifiers e : extras) allowed |= 1u << groups(e);
     // Zusätzlich den Tastaturzustand abfragen: Hält ein Programm die ganze Tastatur fest (viele Vollbild-Spiele),
-    // kommt der Grab-Druck nie an - "Clippen klappt nur manchmal". Die Modifikatoren müssen genau passen, wie beim Grab.
+    // kommt der Grab-Druck nie an - "Clippen klappt nur manchmal". Gilt für dieselben Kombinationen wie die Grabs.
     struct Poll {
         KeyCode key;
         KeyCode mod[4][2];
-        bool need[4];
+        unsigned allowed;
     } poll{code,
            {{XKeysymToKeycode(dpy, XK_Control_L), XKeysymToKeycode(dpy, XK_Control_R)},
             {XKeysymToKeycode(dpy, XK_Alt_L), XKeysymToKeycode(dpy, XK_Alt_R)},
             {XKeysymToKeycode(dpy, XK_Shift_L), XKeysymToKeycode(dpy, XK_Shift_R)},
             {XKeysymToKeycode(dpy, XK_Super_L), XKeysymToKeycode(dpy, XK_Super_R)}},
-           {bool(m & Qt::ControlModifier), bool(m & Qt::AltModifier), bool(m & Qt::ShiftModifier), bool(m & Qt::MetaModifier)}};
+           allowed};
     appLog(QString("hotkey: X11 grab %1 (keycode %2)").arg(sequence).arg(code));
     d->stop = false;
     Impl* s = d.get();
@@ -213,8 +271,12 @@ bool GlobalHotkey::set(const QString& sequence) {
             char keys[32];
             XQueryKeymap(dpy, keys);
             bool held = isDown(keys, poll.key);
-            for (int g = 0; g < 4 && held; ++g)
-                held = (isDown(keys, poll.mod[g][0]) || isDown(keys, poll.mod[g][1])) == poll.need[g];
+            if (held) {
+                int now = 0;
+                for (int g = 0; g < 4; ++g)
+                    if (isDown(keys, poll.mod[g][0]) || isDown(keys, poll.mod[g][1])) now |= 1 << g;
+                held = (poll.allowed >> now) & 1u;
+            }
             if ((grabbed || held) && !down) {
                 const bool viaPoll = !grabbed;
                 QMetaObject::invokeMethod(this, [this, viaPoll] {

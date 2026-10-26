@@ -18,6 +18,23 @@ muteHotkey=
 EOF
 
 FAILS=0
+# Clip-Taste F9, zweiter Clip-Knopf Shift+F10 (6 s), dritter Strg+Feststelltaste (6 s)
+new_keys_config() {
+    sed -i 's/^hotkey=.*/hotkey=F9/' "$HOME/.config/WSoftware/Clipline.conf"
+    cat >> "$HOME/.config/WSoftware/Clipline.conf" <<'EOF'
+
+[buttons]
+1\hotkey=Shift+F10
+1\seconds=6
+1\height=480
+1\fps=30
+2\hotkey=Ctrl+CapsLock
+2\seconds=6
+2\height=480
+2\fps=30
+size=2
+EOF
+}
 count() { ls "$OUT"/clips/*.mp4 2>/dev/null | wc -l; }
 # wartet, bis mindestens $1 Clips da sind (max. 30 s)
 wait_clips() { for _ in $(seq 1 60); do [ "$(count)" -ge "$1" ] && return 0; sleep 0.5; done; return 1; }

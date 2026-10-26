@@ -1,6 +1,8 @@
 // Plattformunabhängige Teile von platform.h
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
+#include <QKeySequence>
 #include <QDesktopServices>
 #include <QFile>
 #include <QDir>
@@ -14,6 +16,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <cmath>
 #include "platform.h"
 
 QString ffmpegPath() {
@@ -38,6 +41,42 @@ QString ffmpegPath() {
     return p.isEmpty() ? name : p;
 }
 
+// ---------------------------------------------------------------- Hotkey-Regeln (für alle Systeme gleich)
+static QStringList g_reserved;
+void setReservedHotkeys(const QStringList& exact) {
+    g_reserved.clear();
+    for (const QString& s : exact)
+        if (!s.isEmpty()) g_reserved << QKeySequence(s).toString(QKeySequence::PortableText);
+}
+
+QList<Qt::KeyboardModifiers> tolerantModifiers(const QKeyCombination& kc) {
+    QList<Qt::KeyboardModifiers> out;
+    const Qt::KeyboardModifiers base = kc.keyboardModifiers();
+    const Qt::KeyboardModifier extras[3] = {Qt::ShiftModifier, Qt::ControlModifier, Qt::AltModifier};
+    for (int mask = 1; mask < 8; ++mask) {
+        Qt::KeyboardModifiers m = base;
+        for (int b = 0; b < 3; ++b)
+            if (mask & (1 << b)) m |= extras[b];
+        if (m == base || out.contains(m)) continue;
+        const QString seq = QKeySequence(QKeyCombination(m, kc.key())).toString(QKeySequence::PortableText);
+        if (!g_reserved.contains(seq)) out << m;
+    }
+    return out;
+}
+
+bool keyAllowedAlone(int key, bool keypad) {
+    if (keypad) return true;  // Ziffernblock
+    if (key >= Qt::Key_F1 && key <= Qt::Key_F35) return true;
+    switch (key) {
+    case Qt::Key_Print: case Qt::Key_Pause: case Qt::Key_ScrollLock: case Qt::Key_CapsLock: case Qt::Key_NumLock:
+    case Qt::Key_Insert: case Qt::Key_Menu: case Qt::Key_MediaPlay: case Qt::Key_MediaPause: case Qt::Key_MediaTogglePlayPause:
+    case Qt::Key_MediaNext: case Qt::Key_MediaPrevious: case Qt::Key_MediaStop: case Qt::Key_MediaRecord:
+        return true;
+    default:
+        return false;
+    }
+}
+
 QString appLogPath() {
     static const QString path = [] {
         QString dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
@@ -59,8 +98,19 @@ void appLog(const QString& line) {
         f.write((QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz ") + line + '\n').toUtf8());
 }
 
+// Bildschirmliste kurz zwischenspeichern: findMonitor wird beim Einstellen oft hintereinander gebraucht
+static QList<Monitor> cachedMonitors() {
+    static QList<Monitor> list;
+    static QElapsedTimer age;
+    if (!age.isValid() || age.elapsed() > 2000 || list.isEmpty()) {
+        list = listMonitors();
+        age.start();
+    }
+    return list;
+}
+
 Monitor findMonitor(const QString& id) {
-    const QList<Monitor> all = listMonitors();
+    const QList<Monitor> all = cachedMonitors();
     for (const Monitor& m : all)
         if (m.id == id) return m;
     for (const Monitor& m : all)
@@ -126,6 +176,43 @@ QStringList listMicrophones() {
     }
 #endif
     return out;
+}
+
+// Mikrofon testen (macOS/Linux): ffmpeg nimmt auf, mit denselben Filtern wie bei der Aufnahme (recorder.cpp)
+bool recordMicTest(const QString& mic, double seconds, const MicTuning& t, const QString& wavOut, QString* error) {
+    QStringList af;
+    if (t.denoise) af << "afftdn=nf=-25:tn=1";
+    if (t.gateDb > -80)
+        af << QString("agate=threshold=%1:ratio=20:attack=5:release=120:range=0.001").arg(std::pow(10.0, t.gateDb / 20.0), 0, 'f', 6);
+    af << QString("volume=%1").arg(t.micVolume / 100.0, 0, 'f', 2);
+    QStringList args = {"-hide_banner", "-loglevel", "error", "-y"};
+#ifdef Q_OS_MAC
+    const int idx = listMicrophones().indexOf(mic);
+    if (idx < 0) {
+        if (error) *error = "microphone not found";
+        return false;
+    }
+    args << "-f" << "avfoundation" << "-i" << QString(":%1").arg(idx);
+#else
+    args << "-f" << "pulse" << "-i" << mic;
+#endif
+    args << "-t" << QString::number(seconds, 'f', 1) << "-af" << af.join(',') << "-ac" << "2" << "-ar" << "48000" << wavOut;
+    QProcess p;
+    p.start(ffmpegPath(), args);
+    const bool ok = p.waitForFinished(int(seconds * 1000) + 15000) && p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0;
+    if (!ok && error) *error = QString::fromUtf8(p.readAllStandardError()).trimmed().right(300);
+    return ok && QFileInfo(wavOut).size() > 1000;
+}
+
+void playWavFile(const QString& path) {
+#ifdef Q_OS_MAC
+    QProcess::startDetached("afplay", {path});
+#else
+    for (const char* player : {"pw-play", "paplay", "aplay"}) {
+        const QString exe = QStandardPaths::findExecutable(player);
+        if (!exe.isEmpty() && QProcess::startDetached(exe, {path})) return;
+    }
+#endif
 }
 
 bool systemAudioSupported() {

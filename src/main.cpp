@@ -31,6 +31,8 @@
 #include <QListView>
 #include <QScrollBar>
 #include <QWheelEvent>
+#include <QContextMenuEvent>
+#include <QKeyEvent>
 #include <QVBoxLayout>
 
 // Erststart: Sprache wählen (wie in Cutline)
@@ -137,11 +139,49 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
         Config shown = cfg;
         if (siteShots) shown.clipsDir = "C:/Users/You/Videos/Clipline";
         SettingsDialog dlg(shown);
+        // CLIPLINE_TALL: hohes Fenster, damit jede Seite ganz aufs Bild passt
+        if (qEnvironmentVariableIntValue("CLIPLINE_TALL") > 0) dlg.resize(780, qEnvironmentVariableIntValue("CLIPLINE_TALL"));
         auto* tabs = dlg.findChild<QTabWidget*>();
-        tabs->setCurrentIndex(1);
-        shot(&dlg, "settings");
-        tabs->setCurrentIndex(2);
-        shot(&dlg, "settings_sound");
+        const char* names[] = {"settings_general", "settings_sound", "settings", "settings_look"};
+        for (int i : {2, 1, 0, 3}) {
+            tabs->setCurrentIndex(i);
+            shot(&dlg, names[i]);
+        }
+    }
+    {
+        // Tastenaufnahme: was im Feld landet (leer = abgelehnt)
+        HotkeyButton hk("F9");
+        hk.setAttribute(Qt::WA_DontShowOnScreen);
+        hk.show();
+        auto press = [&](int key, Qt::KeyboardModifiers mods) {
+            hk.setSequence("F9");
+            hk.click();
+            QKeyEvent ev(QEvent::KeyPress, key, mods);
+            QApplication::sendEvent(&hk, &ev);
+            const QString got = hk.sequence() == "F9" && key != Qt::Key_F9 ? QString("(rejected)") : hk.sequence();
+            hk.setSequence("F9");
+            return got;
+        };
+        say("key Shift+F10: " + press(Qt::Key_F10, Qt::ShiftModifier));
+        say("key Enter: " + press(Qt::Key_Return, Qt::NoModifier));
+        say("key Ctrl+Enter: " + press(Qt::Key_Return, Qt::ControlModifier));
+        say("key Shift+Backspace: " + press(Qt::Key_Backspace, Qt::ShiftModifier));
+        say("key CapsLock: " + press(Qt::Key_CapsLock, Qt::NoModifier));
+        say("key Ctrl+CapsLock: " + press(Qt::Key_CapsLock, Qt::ControlModifier));
+        say("key Ctrl+Tab: " + press(Qt::Key_Tab, Qt::ControlModifier));
+        say("key Shift+Tab: " + press(Qt::Key_Backtab, Qt::ShiftModifier));
+        say("key Numpad 5: " + press(Qt::Key_5, Qt::KeypadModifier));
+        hk.setSequence("F9");
+        hk.click();
+        QContextMenuEvent cm(QContextMenuEvent::Keyboard, QPoint(5, 5));
+        QApplication::sendEvent(&hk, &cm);
+        say("key context menu: " + hk.sequence());
+        setReservedHotkeys({"F9", "Shift+F9"});
+        QStringList tol;
+        for (Qt::KeyboardModifiers m : tolerantModifiers(QKeySequence("F9")[0]))
+            tol << QKeySequence(QKeyCombination(m, Qt::Key_F9)).toString(QKeySequence::PortableText);
+        say("tolerant F9 (Shift+F9 reserved): " + tol.join(", "));
+        setReservedHotkeys({});
     }
     Controller::noRecord = secs <= 0;
     Controller ctl(cfg);
@@ -255,6 +295,7 @@ int main(int argc, char* argv[]) {
 #endif
     app.setWindowIcon(cliplineIcon());
     app.setQuitOnLastWindowClosed(false);
+    installNoWheelChange();
 
     const QStringList args = app.arguments();
     const int st = args.indexOf("--selftest");
