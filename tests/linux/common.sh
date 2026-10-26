@@ -43,7 +43,9 @@ last_len() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$(ls -t
 # check <name> <erwartete Anzahl> [<Mindestlänge>]
 check() {
     if wait_clips "$2"; then
-        local len; len=$(last_len)
+        # Der Clip wird evtl. noch geschrieben (kleinere Qualität wird beim Speichern neu kodiert): warten, bis er lesbar ist
+        local len=""
+        for _ in $(seq 1 20); do len=$(last_len); [ -n "$len" ] && break; sleep 0.5; done
         if [ -n "${3:-}" ] && [ "${len:-0}" -lt "$3" ]; then
             echo "FAIL $1 (clip only ${len:-0} s)"; FAILS=$((FAILS + 1))
         else

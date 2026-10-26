@@ -4,7 +4,7 @@ Save the last moments of your screen with one key. Clipline records quietly in t
 
 - **Runs in the background.** Starts with your computer, sits in the tray and uses the graphics card to record (NVIDIA, AMD, Intel, Apple). About 5 % of one CPU core at 1080p60 on a typical PC.
 - **Clips from memory.** The last 10 s to 10 min are kept in RAM, nothing touches your disk until you save. The setup shows you the estimated RAM use before you start.
-- **One key.** `Ctrl+Alt+S` (configurable) saves the clip as an MP4 in your folder, with system sound and optionally your microphone.
+- **One key.** `F9` (configurable, also works while you hold Shift, Ctrl or Alt) saves the clip as an MP4 in your folder, with system sound and optionally your microphone.
 - **As many clip buttons as you like.** Add more under the first one ("+"): each has its own key, clip length, resolution, frame rate and quality – e.g. 30 s in full quality on one key and 5 min in 720p on another.
 - **Clip gallery.** Open Clipline to see all clips with previews – one click plays a clip.
 - **12 languages**: Deutsch, English, Español, Français, Italiano, Português, Nederlands, Polski, Türkçe, Русский, 日本語, 中文.
