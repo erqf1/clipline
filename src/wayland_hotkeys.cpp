@@ -47,6 +47,8 @@ static const QDBusArgument& operator>>(const QDBusArgument& a, PortalShortcut& s
     return a;
 }
 
+static QMap<QString, QString> triggerMap(const QList<PortalShortcut>& list);  // Kennung -> Taste laut System
+
 namespace {
 // Taste einer Kombination als Name, wie ihn Hyprland/Sway/das Portal erwarten (xkb-Namen).
 // lower: Buchstaben klein (Sway, Portal) statt groß (Hyprland)
@@ -110,7 +112,9 @@ void registerPortalApp() {
 // KDE: Ohne gültige App-ID legte KDE für Clipline bei jedem Start eine neue Tastengruppe mit Zufallsnamen an.
 // Die alten Gruppen hielten Strg+Alt+S weiter belegt, die neue bekam keine Taste - die Clip-Taste ging nie.
 // Solche Reste entfernen: nur Gruppen, die ausschließlich Clipline-Tasten ("clipline-…") enthalten.
-static void removeKdeLeftovers() {
+// keepOwn: In Cliplines eigener Gruppe alle Clipline-Tasten entfernen, die nicht mehr gebraucht werden (nach dem
+// Ändern der Taste hielt KDE sonst die alte Kombination weiter belegt). Leer = eigene Gruppe nicht anfassen.
+static void kdeCleanup(const QStringList& keepOwn) {
     if (!qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains("KDE", Qt::CaseInsensitive)) return;
     QDBusConnection bus = QDBusConnection::sessionBus();
     const char* kAccel = "org.kde.kglobalaccel";
@@ -123,18 +127,24 @@ static void removeKdeLeftovers() {
     for (const QDBusObjectPath& path : qdbus_cast<QList<QDBusObjectPath>>(r.arguments().first())) {
         QDBusInterface comp(kAccel, path.path(), "org.kde.kglobalaccel.Component", bus);
         const QString name = comp.property("uniqueName").toString();
-        if (name.isEmpty() || name == kLinuxAppId) continue;
+        const bool own = name == kLinuxAppId;
+        if (name.isEmpty() || (own && keepOwn.isEmpty())) continue;
         const QDBusReply<QStringList> names = comp.call("shortcutNames", QString("default"));
         if (!names.isValid() || names.value().isEmpty()) continue;
-        bool ours = true;
-        for (const QString& n : names.value()) ours &= n.startsWith("clipline-");
-        if (!ours) continue;
+        QStringList drop;
+        bool onlyClipline = true;
         for (const QString& n : names.value()) {
+            onlyClipline &= n.startsWith("clipline-");
+            if (n.startsWith("clipline-") && !keepOwn.contains(n)) drop << n;
+        }
+        if (!own && !onlyClipline) continue;
+        for (const QString& n : drop) {
             QDBusMessage un = QDBusMessage::createMethodCall(kAccel, "/kglobalaccel", "org.kde.KGlobalAccel", "unregister");
             un.setArguments({name, n});
             bus.call(un, QDBus::Block, 2000);
         }
-        appLog(QString("hotkey: removed old KDE shortcut group %1 (%2)").arg(name, names.value().join(", ")));
+        if (!drop.isEmpty())
+            appLog(QString("hotkey: removed %1 KDE shortcut(s) %2 from %3").arg(own ? "unused" : "old").arg(drop.join(", "), name));
     }
 }
 
@@ -181,7 +191,8 @@ WaylandHotkeys::WaylandHotkeys() {
             backend_ = Portal;
             bus.connect(kService, kPath, kShortcuts, "Activated", this,
                         SLOT(onActivated(QDBusObjectPath, QString, qulonglong, QVariantMap)));
-            removeKdeLeftovers();
+            bus.connect(kService, kPath, kShortcuts, "ShortcutsChanged", this, SLOT(onShortcutsChanged(QDBusMessage)));
+            kdeCleanup({});
         } else {
             appLog("hotkey: no GlobalShortcuts portal: " +
                    (reply.errorMessage().isEmpty() ? QString("version 0") : reply.errorMessage()));
@@ -431,6 +442,10 @@ void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
             if (trig.isEmpty()) missing << s.id;
         }
         appLog("portal: bound " + (info.isEmpty() ? QString("(no details)") : info.join(", ")));
+        setTriggers(triggerMap(got));
+        QStringList ids;
+        for (const Key& k : keys_) ids << idFor(k.sequence);
+        kdeCleanup(ids);
         if (!missing.isEmpty() && missing.size() == got.size()) {
             // KDE fragt beim ersten Mal per Dialog, ob die Taste gilt. Wurde der weggeklickt (oder Clipline vorher
             // beendet), bleibt die Taste leer - dann den Tasten-Dialog des Systems einmal neu öffnen (Portal v2)
@@ -447,6 +462,31 @@ void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
         }
     }
 }
+
+static QMap<QString, QString> triggerMap(const QList<PortalShortcut>& list) {
+    QMap<QString, QString> m;
+    for (const PortalShortcut& s : list) m[s.id] = s.props.value("trigger_description").toString();
+    return m;
+}
+
+void WaylandHotkeys::setTriggers(const QMap<QString, QString>& triggers) {
+    triggers_ = triggers;
+    emit keysChanged();
+}
+
+// Taste in den Systemeinstellungen geändert: neue Belegung merken (Menü und Hinweise zeigen sie dann)
+void WaylandHotkeys::onShortcutsChanged(const QDBusMessage& msg) {
+    const QList<QVariant> args = msg.arguments();
+    if (args.size() < 2 || args[0].value<QDBusObjectPath>().path() != session_) return;
+    QList<PortalShortcut> list;
+    args[1].value<QDBusArgument>() >> list;
+    setTriggers(triggerMap(list));
+    QStringList info;
+    for (const PortalShortcut& s : list) info << s.id + " -> " + s.props.value("trigger_description").toString();
+    appLog("portal: shortcuts changed in the system settings: " + info.join(", "));
+}
+
+QString WaylandHotkeys::systemKey(const QString& sequence) const { return triggers_.value(idFor(sequence)); }
 
 void WaylandHotkeys::onActivated(const QDBusObjectPath& session, const QString& id, qulonglong, const QVariantMap&) {
     if (session.path() != session_) {

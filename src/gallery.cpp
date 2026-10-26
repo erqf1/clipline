@@ -345,13 +345,13 @@ void GalleryWindow::reload() {
     empty_->setText(QString("<div style='font-size:20px;font-weight:650'>%1</div><div style='margin-top:8px'>%2</div>")
                         .arg(L("No clips yet"),
                              L("Press %1 and the last %2 are saved here.")
-                                 .arg("<b>" + QKeySequence(ctl_->config().hotkey).toString(QKeySequence::NativeText) + "</b>",
+                                 .arg("<b>" + ctl_->keyText(ctl_->config().hotkey) + "</b>",
                                       fmtDuration(ctl_->config().clipSeconds))));
 }
 
 void GalleryWindow::updateStatus() {
     const Recorder& r = ctl_->recorder();
-    const QString key = QKeySequence(ctl_->config().hotkey).toString(QKeySequence::NativeText);
+    const QString key = ctl_->keyText(ctl_->config().hotkey);
     QString dot, text;
     if (!r.wanted() && !Controller::noRecord) {
         dot = "#8d93a6";

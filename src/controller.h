@@ -20,6 +20,7 @@ public:
     explicit Controller(const Config& cfg, QObject* parent = nullptr);
     ~Controller() override;
     const Config& config() const { return cfg_; }
+    QString keyText(const QString& sequence) const;  // Taste zum Anzeigen (unter KDE/GNOME die, die das System nutzt)
     const Recorder& recorder() const { return rec_; }
     bool listen();  // Einzelinstanz: nimmt Befehle von weiteren Starts entgegen
     GalleryWindow* gallery() const { return gallery_; }

@@ -69,6 +69,12 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
         connect(&WaylandHotkeys::instance(), &WaylandHotkeys::problem, this, [this](const QString& text) {
             notify("Clipline", text, QSystemTrayIcon::Warning, 10000);
         });
+    // Taste in den Systemeinstellungen geändert: Menü, Hinweise und Galerie zeigen die neue
+    if (!quiet && WaylandHotkeys::isWayland())
+        connect(&WaylandHotkeys::instance(), &WaylandHotkeys::keysChanged, this, [this] {
+            refreshTray();
+            if (gallery_) gallery_->reload();
+        });
 #endif
     connect(&muteHotkey_, &GlobalHotkey::activated, this, &Controller::toggleMute);
     connect(&rec_, &Recorder::stateChanged, this, &Controller::refreshTray);
@@ -196,14 +202,14 @@ void Controller::registerHotkey() {
 void Controller::refreshTray() {
     const bool rec = rec_.wanted();
     tray_.setIcon(QIcon(cliplineLogo(64, rec && rec_.running(), !rec)));
-    const QString key = QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText);
+    const QString key = keyText(cfg_.hotkey);
     tray_.setToolTip((rec ? QString("Clipline – %1 · %2 = %3").arg(L("Recording"), key, L("last %1").arg(fmtDuration(cfg_.clipSeconds)))
                           : QString("Clipline – %1").arg(L("Paused"))) +
                      (rec_.micMuted() ? " · " + L("Microphone muted") : QString()));
     actPause_->setText(rec ? L("Pause recording") : L("Resume recording"));
     actMute_->setVisible(!cfg_.mic.isEmpty());
     actMute_->setChecked(rec_.micMuted());
-    const QString muteKey = QKeySequence(cfg_.muteHotkey).toString(QKeySequence::NativeText);
+    const QString muteKey = cfg_.muteHotkey.isEmpty() ? QString() : keyText(cfg_.muteHotkey);
     actMute_->setText(L("Mute microphone") + (muteKey.isEmpty() ? QString() : QStringLiteral("\t") + muteKey));
     actSave_->setText(L("Save clip") + (cfg_.extraButtons.isEmpty() ? QString() : QString(" (%1)").arg(fmtDuration(cfg_.clipSeconds))) +
                       "\t" + key);
@@ -219,7 +225,7 @@ void Controller::refreshTray() {
     for (int i = 0; i < cfg_.extraButtons.size(); ++i) {
         const ClipButton& b = cfg_.extraButtons[i];
         auto* a = new QAction(L("Save clip %1").arg(i + 2) + QString(" (%1)").arg(fmtDuration(b.seconds)) + "\t" +
-                                  QKeySequence(b.hotkey).toString(QKeySequence::NativeText), &menu_);
+                                  (b.hotkey.isEmpty() ? QString() : keyText(b.hotkey)), &menu_);
         a->setEnabled(rec);
         connect(a, &QAction::triggered, this, [this, i] { saveClipButton(i + 1); });
         menu_.insertAction(before, a);
@@ -241,12 +247,24 @@ void Controller::galleryClosed() {
         toldBackground_ = true;
         notify("Clipline",
                           L("Clipline is still running in the background. Press %1 to save a clip.")
-                              .arg(QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText)),
+                              .arg(keyText(cfg_.hotkey)),
                           QSystemTrayIcon::Information, 4000);
     }
 }
 
 void Controller::saveClip() { saveClipButton(0); }
+
+// Unter KDE/GNOME (Portal) legt das System die Taste fest und man kann sie dort ändern - dann die anzeigen,
+// die es wirklich nutzt, sonst die eingestellte
+QString Controller::keyText(const QString& sequence) const {
+#if defined(Q_OS_LINUX)
+    if (WaylandHotkeys::isWayland()) {
+        const QString sys = WaylandHotkeys::instance().systemKey(sequence);
+        if (!sys.isEmpty()) return sys;
+    }
+#endif
+    return QKeySequence(sequence).toString(QKeySequence::NativeText);
+}
 
 void Controller::saveClipButton(int i) {
     const QList<ClipButton> buttons = cfg_.allButtons();

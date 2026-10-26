@@ -34,5 +34,18 @@ for n in 3 4 5 6 7; do
     check "clip $n in a row" "$n" 5
 done
 
+# Clip-Taste ändern (Strg+Alt+S -> Strg+Alt+D) und Clipline neu starten: die neue Taste geht, die alte nicht mehr
+pkill -f -- "$BIN --background"
+sleep 1
+sed -i 's/^hotkey=.*/hotkey=Ctrl+Alt+D/' "$HOME/.config/WSoftware/Clipline.conf"
+QT_QPA_PLATFORM=offscreen dbus-run-session -- "$BIN" --background >> "$OUT/stdout.txt" 2>&1 &
+sleep 15
+xdotool keydown ctrl alt d; sleep 0.15; xdotool keyup d alt ctrl
+check "changed hotkey (Ctrl+Alt+D)" 8 5
+before=$(count)
+press
+sleep 6
+if [ "$(count)" -gt "$before" ]; then echo "FAIL old hotkey still saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS old hotkey does nothing any more"; fi
+
 finish
 exit $FAILS

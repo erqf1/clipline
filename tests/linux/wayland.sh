@@ -59,6 +59,16 @@ sleep 3
 n=$(saves); press; expect_save "$n" "hotkey after sway reload"
 n=$(saves); press; expect_save "$n" "hotkey pressed again"
 
+# Clip-Taste ändern (Strg+Alt+S -> Strg+Alt+D) und Clipline neu starten: die neue Taste geht, die alte nicht mehr
+pkill -f -- "$BIN --background"
+sleep 1
+sed -i 's/^hotkey=.*/hotkey=Ctrl+Alt+D/' "$HOME/.config/WSoftware/Clipline.conf"
+"$BIN" --background >> "$OUT/stdout.txt" 2>&1 &
+sleep 8
+n=$(saves); wtype -M ctrl -M alt -k d -m alt -m ctrl; expect_save "$n" "changed hotkey (Ctrl+Alt+D) works"
+n=$(saves); press; sleep 1
+if [ "$(saves)" -gt "$n" ]; then echo "FAIL old hotkey still saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS old hotkey does nothing any more"; fi
+
 echo "----- portal (wlr) screencopy"
 grep -i -E 'shm|format|buffer|dmabuf|gbm|screencopy|frame|error|fail' "$OUT/xdpw.log" | head -n 40
 finish

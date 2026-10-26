@@ -1,4 +1,5 @@
 #pragma once
+#include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QLocalSocket>
 #include <QMap>
@@ -30,14 +31,18 @@ public:
     bool add(GlobalHotkey* hotkey, const QString& sequence, const QString& description);
     void remove(GlobalHotkey* hotkey);
     void trigger(const QString& sequence);  // "clipline --hotkey <Taste>" (Hyprland/Sway)
+    // Portal: Taste, die das System wirklich für diese Kombination nutzt (der Nutzer kann sie dort ändern); leer = unbekannt
+    QString systemKey(const QString& sequence) const;
 
 signals:
     // Das System hat die Taste nicht übernommen (abgelehnt, ohne Taste eingetragen, Portal-Fehler)
     void problem(const QString& text);
+    void keysChanged();  // systemKey() hat sich geändert
 
 private slots:
     void onResponse(uint response, const QVariantMap& results);
     void onActivated(const QDBusObjectPath& session, const QString& id, qulonglong timestamp, const QVariantMap& options);
+    void onShortcutsChanged(const QDBusMessage& msg);
 
 private:
     WaylandHotkeys();
@@ -53,6 +58,7 @@ private:
     QString portalWanted() const;  // Kennung der gewünschten Tasten (gleich = nichts neu eintragen)
     static QString idFor(const QString& sequence);
     static QString portalTrigger(const QString& sequence);
+    void setTriggers(const QMap<QString, QString>& triggers);
 
     Backend backend_ = None;
     uint portalVersion_ = 0;
@@ -61,6 +67,7 @@ private:
     QTimer rebind_;                 // Portal: alle Tasten gesammelt in einem Rutsch eintragen
     enum Step { Idle, Create, Bind } step_ = Idle;
     QString session_, requestPath_, bound_;
+    QMap<QString, QString> triggers_;  // Portal: Kennung -> Taste laut System
     QLocalSocket hyprEvents_;       // Hyprland: "configreloaded" -> Tasten neu eintragen
     QProcess swayEvents_;           // Sway: Workspace-Ereignis "reload" -> Tasten neu eintragen
     QTimer watchRetry_;

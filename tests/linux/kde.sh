@@ -76,6 +76,26 @@ for run in 1 2; do
     stop
 done
 
+# Clip-Taste in Clipline ändern (Strg+Alt+S -> Strg+Alt+D): KDE muss die neue Taste kennen, die alte darf
+# nicht in Cliplines Gruppe bleiben (sonst bleibt Strg+Alt+S belegt), und der neue Druck muss ankommen.
+sed -i 's/^hotkey=.*/hotkey=Ctrl+Alt+D/' "$HOME/.config/WSoftware/Clipline.conf"
+names() { accel /component/win_mert_Clipline org.kde.kglobalaccel.Component.shortcutNames string:default 2>/dev/null | grep -o 'clipline-[a-z0-9-]*' | tr '\n' ' '; }
+for run in 1 2; do
+    echo "== new version with Ctrl+Alt+D, start $run"
+    start "$NEW" "changed$run"
+    echo "Clipline keys at KDE: $(names)"
+    if [ "$run" = 2 ]; then
+        if names | grep -q clipline-ctrl-alt-d; then echo "PASS changed key: KDE knows the new key"; else echo "FAIL changed key: new key missing at KDE"; FAILS=$((FAILS + 1)); fi
+        if names | grep -q clipline-ctrl-alt-s; then echo "FAIL changed key: old key still registered at KDE"; FAILS=$((FAILS + 1)); else echo "PASS changed key: old key removed from KDE"; fi
+        before=$(grep -c "portal: clipline-ctrl-alt-d pressed, 1 action" "$LOG" 2>/dev/null)
+        accel /component/win_mert_Clipline org.kde.kglobalaccel.Component.invokeShortcut string:clipline-ctrl-alt-d string:default > /dev/null 2>&1
+        sleep 2
+        after=$(grep -c "portal: clipline-ctrl-alt-d pressed, 1 action" "$LOG" 2>/dev/null)
+        if [ "$after" -gt "$before" ]; then echo "PASS changed key: press reaches Clipline"; else echo "FAIL changed key: press not received"; FAILS=$((FAILS + 1)); fi
+    fi
+    stop
+done
+
 echo "----- portal signals (responses)"
 grep -A12 -E 'member=(Response|Activated)' "$OUT/portal-signals.txt" | grep -E 'member=|string "(clipline|trigger|session)|string "[A-Z][a-z]+\+' | head -60
 echo "----- xdg-desktop-portal-kde"
