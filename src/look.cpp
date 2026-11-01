@@ -307,19 +307,30 @@ protected:
 void installNoWheelChange() { qApp->installEventFilter(new NoWheelChange); }
 
 // ---------------------------------------------------------------- Logos
-// Clipline: Acryl-Kachel (assets/tile.png, siehe tools_make_icon.py), weißer Rückspul-Kreis mit Aufnahmepunkt
+// Clipline: Koralle -> Violett, weißer Rückspul-Kreis mit Aufnahmepunkt
 QPixmap cliplineLogo(int size, bool recording, bool paused) {
     QPixmap pm(size, size);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
-    p.drawPixmap(0, 0, QPixmap(":/logo/tile.png").scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    if (paused) {  // Pause: Kachel grau statt farbig
-        p.setCompositionMode(QPainter::CompositionMode_SourceAtop);
-        p.fillRect(pm.rect(), QColor(96, 99, 112, 225));
-        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    }
     p.scale(size / 100.0, size / 100.0);
+    QLinearGradient g(0, 0, 100, 100);
+    if (paused) {
+        g.setColorAt(0, QColor("#8b90a0"));
+        g.setColorAt(1, QColor("#565b6b"));
+    } else {
+        g.setColorAt(0, QColor("#ff5f6d"));
+        g.setColorAt(1, QColor("#8b5cf6"));
+    }
+    p.setPen(Qt::NoPen);
+    p.setBrush(g);
+    p.drawRoundedRect(QRectF(4, 4, 92, 92), 24, 24);
+    // Glanz
+    QLinearGradient gl(0, 4, 0, 50);
+    gl.setColorAt(0, QColor(255, 255, 255, 60));
+    gl.setColorAt(1, QColor(255, 255, 255, 0));
+    p.setBrush(gl);
+    p.drawRoundedRect(QRectF(4, 4, 92, 46), 24, 24);
     // Rückspul-Bogen mit Pfeil
     QPen pen(Qt::white, 8.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);

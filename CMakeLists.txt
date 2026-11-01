@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Clipline VERSION 1.8.1 LANGUAGES C CXX)
+project(Clipline VERSION 1.8.2 LANGUAGES C CXX)
 if(WIN32)
     enable_language(RC)
 endif()
@@ -37,7 +37,6 @@ set(CLIPLINE_SOURCES
     src/controller.h src/controller.cpp
     src/updater.h src/updater.cpp
     assets/photos.qrc
-    assets/logo.qrc
 )
 
 if(WIN32)
