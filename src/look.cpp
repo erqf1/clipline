@@ -12,6 +12,7 @@
 #include <QAbstractScrollArea>
 #include <QScrollBar>
 #include <QVariantAnimation>
+#include <random>
 #include <QWheelEvent>
 #include <QLinearGradient>
 #include <QPainter>
@@ -22,6 +23,9 @@
 static bool g_minimal = false;
 void setMinimalLook(bool on) { g_minimal = on; }
 bool minimalLook() { return g_minimal; }
+static bool g_acryl = false;
+void setAcrylLook(bool on) { g_acryl = on; }
+bool acrylLook() { return g_acryl; }
 
 const QList<QColor>& accentChoices() {
     static const QList<QColor> c = {QColor("#ff4d6d"), QColor("#ff7a3d"), QColor("#f5b400"), QColor("#22c55e"),
@@ -32,6 +36,17 @@ const QList<QColor>& accentChoices() {
 Palette makePalette(const QString& accent, bool dark) {
     Palette p;
     p.accent = QColor(accent).isValid() ? QColor(accent) : QColor("#ff4d6d");
+    if (g_acryl) {  // Acryl: die Farben gelten für Deckendes wie Menüs, Flächen sind durchscheinend (kAcrylSheet)
+        if (dark) {
+            p.bg = "#1f2023"; p.panel = "#27282c"; p.panel2 = "#303136"; p.border = "#3f4046";
+            p.text = "#f1f1f3"; p.muted = "#afb0b8"; p.hover = "#3d3e44";
+        } else {
+            p.bg = "#eaeaed"; p.panel = "#f6f6f8"; p.panel2 = "#ffffff"; p.border = "#cfcfd6";
+            p.text = "#17181c"; p.muted = "#5b5c66"; p.hover = "#dadbe1";
+        }
+        p.accentText = p.accent.lightnessF() > 0.62 ? QColor("#15161c") : QColor("#ffffff");
+        return p;
+    }
     if (!g_minimal) {  // Standard: das bisherige Aussehen
         if (dark) {
             p.bg = "#0c0d12"; p.panel = "#14161e"; p.panel2 = "#1b1e29"; p.border = "#2a2e3c";
@@ -183,6 +198,95 @@ QPushButton#dashed:hover { border-color: @accent@; color: @text@; }
 QPushButton#flat:hover { background: @panel2@; }
 )";
 
+// Acryl: wird an den Standard angehängt. Aufklappendes bleibt deckend, das sind eigene Fenster.
+static const char* kAcrylSheet = R"(
+QDialog, GalleryWindow#root { background: @bg@; border-image: url(@smoke@) 0 0 0 0 stretch stretch; }
+QDialog QWidget#root { background: transparent; }
+QFrame#card { background: @glass@; border: 1px solid @edge@; border-radius: 14px; }
+QFrame#side { background: @glass@; border: none; border-right: 1px solid @edge@; }
+QLabel#pill { background: @glass2@; border: 1px solid @edge@; }
+QPushButton { background: @glass2@; border: 1px solid @edge@; }
+QPushButton:hover { background: @glass3@; border-color: @edge@; }
+QPushButton:pressed { background: @glass@; }
+QPushButton#primary { background: @accent@; color: @acctext@; border-color: @accent@; }
+QPushButton#primary:hover { background: @accent2@; }
+QPushButton#flat { background: transparent; border: none; }
+QPushButton#flat:hover { background: @glass2@; }
+QPushButton#hotkey { background: @well@; border: 2px solid @edge@; border-bottom-width: 5px; }
+QPushButton#hotkey:hover { border-color: @accent@; background: @well@; }
+QPushButton#hotkey[recording="true"] { border-color: @accent@; color: @accent@; }
+QPushButton#seg:checked { background: @accent@; color: @acctext@; border-color: @accent@; }
+QPushButton#dashed { background: transparent; border: 2px dashed @edge@; }
+QPushButton#dashed:hover { border-color: @accent@; background: transparent; }
+QComboBox, QLineEdit, QKeySequenceEdit { background: @well@; border: 1px solid @edge@; }
+QComboBox:hover, QLineEdit:hover { border-color: @accent@; }
+QComboBox QAbstractItemView { selection-background-color: @hover@; selection-color: @text@; }
+QListWidget { background: @well@; border: 1px solid @edge@; }
+QListWidget::item:hover { background: @glass2@; }
+QListWidget::item:selected { background: @glass3@; color: @text@; }
+QTabWidget::pane { border: 1px solid @edge@; background: @glass@; }
+QSlider::groove:horizontal { height: 4px; background: @edge@; border-radius: 2px; }
+QSlider::handle:horizontal { width: 16px; height: 16px; margin: -6px 0; background: @text@; border-radius: 8px; }
+QProgressBar { background: @well@; }
+QScrollBar::handle:vertical { background: @glass3@; }
+QMenu::item:selected { background: @hover@; }
+)";
+
+// Weichzeichnen in laufender Summe: dreimal Kastenfilter in beide Richtungen
+static QImage softBlur(QImage img, int r) {
+    const int w = img.width(), h = img.height(), c = 2 * r + 1;
+    QList<QRgb> line(std::max(w, h));
+    auto run = [&](QRgb* first, int n, int stride) {
+        for (int i = 0; i < n; ++i) line[i] = first[i * stride];
+        int R = 0, G = 0, B = 0;
+        for (int i = -r; i <= r; ++i) {
+            const QRgb v = line[std::clamp(i, 0, n - 1)];
+            R += qRed(v);
+            G += qGreen(v);
+            B += qBlue(v);
+        }
+        for (int i = 0; i < n; ++i) {
+            first[i * stride] = qRgb((R + r) / c, (G + r) / c, (B + r) / c);
+            const QRgb add = line[std::min(i + r + 1, n - 1)], sub = line[std::max(i - r, 0)];
+            R += qRed(add) - qRed(sub);
+            G += qGreen(add) - qGreen(sub);
+            B += qBlue(add) - qBlue(sub);
+        }
+    };
+    auto* px = reinterpret_cast<QRgb*>(img.bits());
+    const int stride = int(img.bytesPerLine() / 4);
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int y = 0; y < h; ++y) run(px + y * stride, w, 1);
+        for (int x = 0; x < w; ++x) run(px + x, h, stride);
+    }
+    return img;
+}
+
+// Rauch: weiche Wolken aus nur einer Farbfamilie (der Akzentfarbe), bewusst ohne Korn. Einmal gezeichnet, als Datei fürs Stylesheet.
+static QString smokeFile(const QColor& accent, bool dark) {
+    int hue = accent.hslHue() < 0 || accent.hslSaturation() < 24 ? 215 : accent.hslHue();
+    if (hue >= 28 && hue <= 75) hue = 22;  // Gelb und Orange würden dunkel olivgrün, deshalb warmes Braunrot
+    const QString dir = QDir::temp().filePath("clipline-ui");
+    QDir().mkpath(dir);
+    const QString path = QString("%1/smoke-%2%3.png").arg(dir).arg(hue).arg(dark ? "d" : "l");
+    if (QFileInfo::exists(path)) return path;
+    const int W = 640, H = 360;
+    QImage im(W, H, QImage::Format_RGB32);
+    im.fill(dark ? QColor::fromHsl(hue, 22, 38) : QColor::fromHsl(hue, 30, 232));
+    QPainter g(&im);
+    g.setPen(Qt::NoPen);
+    std::mt19937 rnd(11);
+    auto pick = [&](int a, int b) { return a + int(rnd() % uint(b - a + 1)); };
+    for (int i = 0; i < 11; ++i) {
+        const int h2 = (hue + pick(-14, 14) + 360) % 360;
+        g.setBrush(dark ? QColor::fromHsl(h2, pick(50, 92), pick(56, 80)) : QColor::fromHsl(h2, pick(50, 90), pick(214, 226)));
+        g.drawEllipse(QRect(pick(-80, W), pick(-80, H), pick(120, 350), pick(80, 240)));
+    }
+    g.end();
+    softBlur(im, 55).save(path);
+    return path;
+}
+
 // Schalter statt Kästchen: an = Akzentfarbe mit Knopf rechts, aus = grau mit Knopf links - auf einen Blick klar.
 // Qt-Stylesheets brauchen dafür Bilddateien; die werden passend zu den Farben einmal gezeichnet (@2x für HiDPI).
 static QString toggleSheet(const Palette& p) {
@@ -220,7 +324,17 @@ static QString toggleSheet(const Palette& p) {
 }
 
 QString styleSheet(const Palette& p) {
-    QString s = QString::fromUtf8(g_minimal ? kMinimalSheet : kStandardSheet);
+    QString s = QString::fromUtf8(g_minimal && !g_acryl ? kMinimalSheet : kStandardSheet);
+    if (g_acryl) {
+        const bool dark = p.bg.lightness() < 128;
+        s += QString::fromUtf8(kAcrylSheet);
+        s.replace("@smoke@", smokeFile(p.accent, dark));
+        s.replace("@glass3@", dark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.92)");
+        s.replace("@glass2@", dark ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.66)");
+        s.replace("@glass@", dark ? "rgba(255,255,255,0.055)" : "rgba(255,255,255,0.46)");
+        s.replace("@edge@", dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.10)");
+        s.replace("@well@", dark ? "rgba(0,0,0,0.30)" : "rgba(255,255,255,0.56)");
+    }
     s.replace("@toggle@", toggleSheet(p));
     s.replace("@bg@", p.bg.name()).replace("@panel@", p.panel.name()).replace("@panel2@", p.panel2.name())
         .replace("@border@", p.border.name()).replace("@text@", p.text.name()).replace("@muted@", p.muted.name())

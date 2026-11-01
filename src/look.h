@@ -13,6 +13,9 @@ QString styleSheet(const Palette& p);
 // Stil: Standard (bisheriges Aussehen) oder Minimal - gilt für makePalette() und styleSheet()
 void setMinimalLook(bool on);
 bool minimalLook();
+// Stil Acryl: rauchiger Hintergrund in der Akzentfarbe, Flächen wie mattes Glas (hat Vorrang vor Minimal)
+void setAcrylLook(bool on);
+bool acrylLook();
 const QList<QColor>& accentChoices();
 
 // Logos + Symbole (mit QPainter gezeichnet)

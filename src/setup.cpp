@@ -91,6 +91,7 @@ static constexpr int kLengthCount = int(sizeof(kLengths) / sizeof(kLengths[0]));
 
 void applyLook(const Config& c) {
     setMinimalLook(c.minimal);
+    setAcrylLook(c.acryl);
     qApp->setStyleSheet(styleSheet(makePalette(c.accent, c.dark)));
 }
 
@@ -931,10 +932,15 @@ QWidget* ConfigPages::lookPage() {
     QWidget* mode = segmented({L("Dark"), L("Light")}, cfg_.dark ? 0 : 1, &mg);
     connect(mg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.dark = id == 0; emit lookChanged(); emit changed(); });
     form->addRow(L("Mode"), mode);
-    // Stil: Standard (bisheriges Aussehen) oder Minimal (ruhiger, ohne Rahmen)
+    // Stil: Standard (bisheriges Aussehen), Minimal (ruhiger, ohne Rahmen) oder Acryl (Rauch und mattes Glas)
     QButtonGroup* sg = nullptr;
-    QWidget* style = segmented({L("Standard"), L("Minimal")}, cfg_.minimal ? 1 : 0, &sg);
-    connect(sg, &QButtonGroup::idClicked, this, [this](int id) { cfg_.minimal = id == 1; emit lookChanged(); emit changed(); });
+    QWidget* style = segmented({L("Standard"), L("Minimal"), L("Acrylic")}, cfg_.acryl ? 2 : cfg_.minimal ? 1 : 0, &sg);
+    connect(sg, &QButtonGroup::idClicked, this, [this](int id) {
+        cfg_.minimal = id == 1;
+        cfg_.acryl = id == 2;
+        emit lookChanged();
+        emit changed();
+    });
     form->addRow(L("Style"), style);
     v->addLayout(form);
     v->addStretch();

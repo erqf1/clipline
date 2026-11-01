@@ -108,6 +108,7 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
     cfg.firstRunDone = true;
     cfg.language = qEnvironmentVariable("CLIPLINE_LANG", "en");
     cfg.minimal = qEnvironmentVariableIsSet("CLIPLINE_TESTMINIMAL");
+    cfg.acryl = qEnvironmentVariableIsSet("CLIPLINE_TESTACRYL");
     const bool siteShots = qEnvironmentVariableIsSet("CLIPLINE_NOSPIN");  // Bilder für die Website
     if (siteShots) cfg.autostart = cfg.sound = true;  // nur Anzeige - im Selbsttest wird nichts eingerichtet
     cfg.height = qEnvironmentVariableIntValue("CLIPLINE_TESTRES") > 0 ? qEnvironmentVariableIntValue("CLIPLINE_TESTRES") : cfg.height;

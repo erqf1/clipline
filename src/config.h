@@ -32,6 +32,7 @@ struct Config {
     QString muteHotkey = "Ctrl+Alt+M";  // Mikrofon stumm/an, leer = keiner
     QString accent = "#ff4d6d";
     bool minimal = false;     // Stil Minimal statt Standard
+    bool acryl = false;       // Stil Acryl (hat Vorrang vor Minimal)
     bool dark = true;
     bool autostart = true;
     bool sound = true;

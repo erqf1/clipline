@@ -216,6 +216,7 @@ private:
 GalleryWindow::GalleryWindow(Controller* ctl) : ctl_(ctl) {
     setAttribute(Qt::WA_DeleteOnClose);
     setObjectName("root");
+    setAttribute(Qt::WA_StyledBackground);  // sonst malt der Stil Acryl das Hintergrundbild nicht
     setWindowTitle("Clipline");
     setWindowIcon(cliplineIcon());
     resize(1060, 700);

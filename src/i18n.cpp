@@ -15,6 +15,7 @@ struct Entry { const char* en; const char* t[N]; };
 const Entry kTable[] = {
  {"%1 clips", {"%1 Clips","%1 clips","%1 clips","%1 clip","%1 clipes","%1 clips","%1 klipów","%1 klip","Клипов: %1","%1 件のクリップ","%1 个剪辑"}},
  {"1 clip", {"1 Clip","1 clip","1 clip","1 clip","1 clipe","1 clip","1 klip","1 klip","1 клип","1 件のクリップ","1 个剪辑"}},
+ {"Acrylic", {"Acryl","Acrílico","Acrylique","Acrilico","Acrílico","Acryl","Akryl","Akrilik","Акрил","アクリル","亚克力"}},
  {"Accent colour", {"Akzentfarbe","Color de acento","Couleur d'accent","Colore di accento","Cor de destaque","Accentkleur","Kolor akcentu","Vurgu rengi","Цвет акцента","アクセントカラー","强调色"}},
  {"Back", {"Zurück","Atrás","Retour","Indietro","Voltar","Terug","Wstecz","Geri","Назад","戻る","返回"}},
  {"Balanced", {"Ausgewogen","Equilibrada","Équilibrée","Bilanciata","Equilibrada","Gebalanceerd","Zrównoważona","Dengeli","Баланс","標準","均衡"}},
