@@ -197,12 +197,18 @@ void WaylandCapture::fail(const QString& error) {
 
 QStringList WaylandCapture::gstArgs(int fd, const QSize& out, int fps) const {
     // keepalive-time: PipeWire schickt bei stillem Bild nichts - das letzte Bild alle 100 ms wiederholen,
-    // videorate füllt auf die Bildrate auf (sonst stockt ffmpeg und der Ton läuft davon)
+    // videorate füllt auf die Bildrate auf (sonst stockt ffmpeg und der Ton läuft davon).
+    // Die beiden "leaky" Warteschlangen werfen alte Bilder weg, wenn Umrechnen oder ffmpeg nicht hinterherkommen.
+    // Ohne sie staute videorate unter Last (Spiel + Aufnahme) immer weiter: nach ein paar Minuten zeigte der
+    // Clip ein Bild von vor Minuten, der Ton war aktuell.
+    const QString leaky = "max-size-buffers=2";
     return {"-q",
             "pipewiresrc", QString("fd=%1").arg(fd), QString("path=%1").arg(node_), "do-timestamp=true",
             "keepalive-time=100", "always-copy=true",
+            "!", "queue", "leaky=downstream", leaky, "max-size-bytes=0", "max-size-time=0",
             "!", "videoconvert", "!", "videoscale", "!", "videorate",
             "!", QString("video/x-raw,format=NV12,width=%1,height=%2,framerate=%3/1,pixel-aspect-ratio=1/1")
                      .arg(out.width()).arg(out.height()).arg(fps),
+            "!", "queue", "leaky=downstream", leaky, "max-size-bytes=0", "max-size-time=0",
             "!", "fdsink", "fd=1", "sync=false"};
 }

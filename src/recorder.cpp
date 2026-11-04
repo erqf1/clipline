@@ -271,7 +271,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
         out = captureSize(cfg_, native);
         waylandOut_ = out;
         inputScaled = true;
-        a << "-thread_queue_size" << "64" << "-f" << "rawvideo" << "-pix_fmt" << "nv12" << "-video_size"
+        a << "-thread_queue_size" << "16" << "-f" << "rawvideo" << "-pix_fmt" << "nv12" << "-video_size"
           << QString("%1x%2").arg(out.width()).arg(out.height()) << "-framerate" << fps
           << "-use_wallclock_as_timestamps" << "1" << "-i" << "pipe:0";
     } else {

@@ -96,6 +96,30 @@ for run in 1 2; do
     stop
 done
 
+# Taste als Befehl in den KDE-Kurzbefehlen ("clipline --save"): Der Befehl kommt aus einem eigenen Prozess wie bei
+# KDE. Mit systemKey=true meldet Clipline keine eigene Taste an und zeigt keinen Hinweis; der Hinweis nennt den
+# Befehl mit vollem Pfad (bei der .tar-Version kennt KDE "clipline" allein nicht).
+echo "== system shortcut (command) mode"
+grep -q '^systemKey=' "$HOME/.config/WSoftware/Clipline.conf" && sed -i 's/^systemKey=.*/systemKey=true/' "$HOME/.config/WSoftware/Clipline.conf" \
+    || sed -i 's/^\[General\]$/[General]\nsystemKey=true/' "$HOME/.config/WSoftware/Clipline.conf"
+grep -q '^systemKey=true' "$HOME/.config/WSoftware/Clipline.conf" || echo "systemKey=true" >> "$HOME/.config/WSoftware/Clipline.conf"
+lines=$(wc -l < "$LOG")
+start "$NEW" "systemkey"
+(cd / && env -i HOME="$HOME" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" USER="$(id -un)" "$NEW" --save)
+code=$?
+sleep 2
+tail -n +"$((lines + 1))" "$LOG" > "$OUT/systemkey.log"
+if grep -q "hotkey: system shortcut mode, command: $NEW --save" "$OUT/systemkey.log"; then echo "PASS system key: no own key, command with full path ($NEW --save)"
+else echo "FAIL system key: mode or command missing"; grep hotkey "$OUT/systemkey.log" | head -5; FAILS=$((FAILS + 1)); fi
+if grep -q "notice: .*hotkey" "$OUT/systemkey.log"; then echo "FAIL system key: still warns about the hotkey"; FAILS=$((FAILS + 1)); else echo "PASS system key: no hotkey warning"; fi
+if [ "$code" = 0 ] && grep -q "relay: save from command line -> sent" "$OUT/systemkey.log"; then echo "PASS system key: --save from another process (like KDE) arrives"
+else echo "FAIL system key: --save did not arrive (exit $code)"; FAILS=$((FAILS + 1)); fi
+if grep -q "save: clip button 1 " "$OUT/systemkey.log"; then echo "PASS system key: Clipline saves a clip for it"; else echo "FAIL system key: no clip attempt"; FAILS=$((FAILS + 1)); fi
+stop
+(cd / && "$NEW" --save); code=$?
+if [ "$code" = 1 ] && tail -n 3 "$LOG" | grep -q "relay: save from command line -> Clipline is not running"; then echo "PASS --save without Clipline running: exit 1 and logged"
+else echo "FAIL --save without Clipline: exit $code"; FAILS=$((FAILS + 1)); fi
+
 echo "----- portal signals (responses)"
 grep -A12 -E 'member=(Response|Activated)' "$OUT/portal-signals.txt" | grep -E 'member=|string "(clipline|trigger|session)|string "[A-Z][a-z]+\+' | head -60
 echo "----- xdg-desktop-portal-kde"

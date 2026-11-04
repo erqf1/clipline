@@ -47,6 +47,7 @@ private:
     void refreshTray();
     void command(const QByteArray& cmd);
     void notify(const QString& title, const QString& text, QSystemTrayIcon::MessageIcon icon, int ms);
+    void hotkeyHint(const QString& text);
 
     // Eine Aufnahme pro Bildschirm, den ein Clip-Knopf braucht (Knopf 1 zuerst)
     void syncRecorders();
@@ -71,3 +72,4 @@ private:
 };
 
 QString serverName();
+QString saveCommandText();  // "clipline --save" mit vollem Pfad (Linux)

@@ -1,6 +1,7 @@
 #include "controller.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDir>
 #include <QFileInfo>
 #include <QKeySequence>
@@ -23,6 +24,21 @@ static bool waylandSession() { return false; }
 #include "wayland_hotkeys.h"
 #endif
 
+// Befehl, den man im System auf eine Taste legt - mit vollem Pfad: Bei der .tar-Version (und oft auch bei
+// ~/.local/bin) kennt der Desktop "clipline" allein nicht, dann tat die Taste in KDE einfach nichts.
+QString saveCommandText() {
+#if defined(Q_OS_LINUX)
+    QString exe = qEnvironmentVariable("APPIMAGE");
+    if (exe.isEmpty()) exe = QCoreApplication::applicationFilePath();
+    if (exe == "/usr/bin/clipline") return "clipline --save";
+    static const QRegularExpression plain("^[A-Za-z0-9_./-]+$");
+    if (!plain.match(exe).hasMatch()) exe = "'" + exe.replace("'", "'\\''") + "'";
+    return exe + " --save";
+#else
+    return "clipline --save";
+#endif
+}
+
 QString serverName() {
     QString user = qEnvironmentVariable("USERNAME", qEnvironmentVariable("USER", "user"));
     return "clipline-" + user.remove(QRegularExpression("[^A-Za-z0-9_-]"));
@@ -42,6 +58,14 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     menu_.addAction(L("Open folder"), this, [this] { revealInFolder(cfg_.clipsDir); });
     menu_.addAction(L("Settings"), this, &Controller::openSettings);
     menu_.addAction(L("Check for updates"), this, [this] { if (updater_) updater_->check(true); });
+#if defined(Q_OS_LINUX)
+    // Wayland: Befehl für eine Taste in den Systemeinstellungen (KDE: Kurzbefehle -> Befehl hinzufügen)
+    if (WaylandHotkeys::isWayland())
+        menu_.addAction(L("Copy command for a system shortcut"), this, [this] {
+            QGuiApplication::clipboard()->setText(saveCommandText());
+            notify("Clipline", L("Copied: %1").arg(saveCommandText()), QSystemTrayIcon::Information, 6000);
+        });
+#endif
     menu_.addSeparator();
     menu_.addAction(L("Quit"), this, &Controller::quit);
     connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
@@ -74,7 +98,7 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     // Wayland: Das System hat eine Taste abgelehnt oder ohne Taste eingetragen -> sagen, was zu tun ist
     if (!quiet && WaylandHotkeys::isWayland())
         connect(&WaylandHotkeys::instance(), &WaylandHotkeys::problem, this, [this](const QString& text) {
-            notify("Clipline", text, QSystemTrayIcon::Warning, 10000);
+            if (!cfg_.systemKey) hotkeyHint(text);
         });
     // Taste in den Systemeinstellungen geändert: Menü, Hinweise und Galerie zeigen die neue
     if (!quiet && WaylandHotkeys::isWayland())
@@ -193,6 +217,18 @@ bool Controller::listen() {
 }
 
 void Controller::command(const QByteArray& cmd) {
+#if defined(Q_OS_LINUX)
+    // Die Taste kommt als Befehl aus den Systemeinstellungen, die eigene geht nicht: ab jetzt nur noch so -
+    // keine Hinweise mehr bei jedem Start und keine eigene Taste, die mit der des Systems um dieselbe Kombination streitet
+    const bool ownKeyMissing = !hotkeyOk_ || (WaylandHotkeys::instance().backendName() == "Portal" &&
+                                              WaylandHotkeys::instance().systemKey(cfg_.hotkey).isEmpty());
+    if ((cmd == "save" || cmd.startsWith("save:")) && WaylandHotkeys::isWayland() && ownKeyMissing && !cfg_.systemKey) {
+        cfg_.systemKey = true;
+        if (!quiet) cfg_.save();
+        appLog("hotkey: got \"--save\" from a system shortcut, using that from now on");
+        registerHotkey();
+    }
+#endif
     if (cmd == "save") saveClip();
     else if (cmd.startsWith("save:")) saveClipButton(cmd.mid(5).toInt() - 1);  // "clipline --save 2"
 #if defined(Q_OS_LINUX)
@@ -204,7 +240,9 @@ void Controller::command(const QByteArray& cmd) {
 
 void Controller::applyConfig(const Config& c, bool first) {
     const bool autostartChanged = first || c.autostart != cfg_.autostart;
+    const bool keyChanged = !first && c.hotkey != cfg_.hotkey;
     cfg_ = c;
+    if (keyChanged) cfg_.systemKey = false;  // neue Taste in Clipline gewählt: wieder selbst anmelden
     if (!quiet) cfg_.save();
     setLanguage(cfg_.language);
     applyLook(cfg_);
@@ -231,6 +269,13 @@ void Controller::registerHotkey() {
     QStringList exact = {cfg_.hotkey, cfg_.muteHotkey};
     for (const ClipButton& b : cfg_.extraButtons) exact << b.hotkey;
     setReservedHotkeys(exact);
+#if defined(Q_OS_LINUX)
+    if (cfg_.systemKey && WaylandHotkeys::isWayland()) {
+        hotkeyOk_ = false;
+        appLog("hotkey: system shortcut mode, command: " + saveCommandText());
+        return;
+    }
+#endif
     hotkey_.setDescription(L("Save clip"));
     muteHotkey_.setDescription(L("Mute microphone"));
     if (!cfg_.muteHotkey.isEmpty() && !cfg_.mic.isEmpty() && !muteHotkey_.set(cfg_.muteHotkey)) {
@@ -242,11 +287,9 @@ void Controller::registerHotkey() {
     appLog(QString("hotkey: %1 %2").arg(cfg_.hotkey, hotkeyOk_ ? "set" : "NOT set"));
     if (!hotkeyOk_) {
         const QString key = QKeySequence(cfg_.hotkey).toString(QKeySequence::NativeText);
-        notify("Clipline",
-                          GlobalHotkey::supported()
-                              ? L("The hotkey %1 is already used by another program. Choose a different one in the settings.").arg(key)
-                              : L("Global hotkeys are not available here. Bind the command \"clipline --save\" to a key in your system settings."),
-                          QSystemTrayIcon::Warning, 8000);
+        hotkeyHint(GlobalHotkey::supported()
+                       ? L("The hotkey %1 is already used by another program. Choose a different one in the settings.").arg(key)
+                       : L("Global hotkeys are not available here. Bind the command \"clipline --save\" to a key in your system settings."));
     }
     // Weitere Clip-Knöpfe: je eine eigene Taste
     for (int i = 0; i < cfg_.extraButtons.size(); ++i) {
@@ -385,6 +428,19 @@ void Controller::quit() {
     for (auto& [mon, rec] : recs_) rec->stop();
     tray_.hide();
     QApplication::quit();
+}
+
+// Hinweis zur Clip-Taste: mit dem echten Befehl (voller Pfad) und nur einmal - nicht bei jedem Start erneut
+void Controller::hotkeyHint(const QString& text) {
+    const QString msg = QString(text).replace("clipline --save", saveCommandText());
+    QSettings s;
+    const QString seen = cfg_.hotkey + "|" + msg;
+    if (s.value("hotkeyHint").toString() == seen) {
+        appLog("hotkey: hint already shown: " + msg);
+        return;
+    }
+    s.setValue("hotkeyHint", seen);
+    notify("Clipline", msg, QSystemTrayIcon::Warning, 12000);
 }
 
 void Controller::notify(const QString& title, const QString& text, QSystemTrayIcon::MessageIcon icon, int ms) {

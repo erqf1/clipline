@@ -38,6 +38,7 @@ struct Config {
     bool sound = true;
     QString language;         // "", "en", "de"
     QString waylandToken;     // Linux/Wayland: gemerkte Bildschirmfreigabe (kein Portal-Dialog bei jedem Start)
+    bool systemKey = false;   // Linux/Wayland: Taste liegt als Befehl "clipline --save" in den Systemeinstellungen
     bool firstRunDone = false;
     QList<ClipButton> extraButtons;  // Clip-Knopf 2, 3, …
 

@@ -70,10 +70,10 @@ static QString askLanguage() {
 static bool sendToRunning(const QByteArray& cmd) {
     QLocalSocket s;
     s.connectToServer(serverName());
-    if (!s.waitForConnected(400)) return false;
+    if (!s.waitForConnected(1500)) return false;
     s.write(cmd);
-    s.waitForBytesWritten(400);
-    s.waitForDisconnected(400);
+    s.waitForBytesWritten(1500);
+    s.waitForDisconnected(1500);
     return true;
 }
 
@@ -269,6 +269,9 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
 // Desktop-Befehl kein Display hat (unter Wayland ohne XWayland/Qt-Wayland-Plugin stürzte es sonst ab).
 static int relay(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
+    // gleicher Name wie das Programm, damit es ins selbe Protokoll schreibt
+    QCoreApplication::setOrganizationName("WSoftware");
+    QCoreApplication::setApplicationName("Clipline");
     const QStringList args = app.arguments();
     const int saveAt = args.indexOf("--save"), keyAt = args.indexOf("--hotkey");
     QByteArray cmd = "save";
@@ -277,7 +280,10 @@ static int relay(int argc, char* argv[]) {
         if (n > 1) cmd = "save:" + QByteArray::number(n);
     }
     if (keyAt >= 0 && keyAt + 1 < args.size()) cmd = "hotkey:" + args[keyAt + 1].toUtf8();
-    return sendToRunning(cmd) ? 0 : 1;  // 1 = nichts läuft, das speichern könnte
+    const bool ok = sendToRunning(cmd);
+    if (cmd.startsWith("save"))  // Tasten aus den Systemeinstellungen: im Protokoll sieht man, ob sie ankommen
+        appLog(QString("relay: %1 from command line -> %2").arg(QString::fromUtf8(cmd), ok ? "sent" : "Clipline is not running"));
+    return ok ? 0 : 1;  // 1 = nichts läuft, das speichern könnte
 }
 
 int main(int argc, char* argv[]) {

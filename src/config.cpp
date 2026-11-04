@@ -30,6 +30,7 @@ Config Config::load() {
     c.micDenoise = s.value("micDenoise", c.micDenoise).toBool();
     c.hotkey = s.value("hotkey", c.hotkey).toString();
     c.muteHotkey = s.value("muteHotkey", c.muteHotkey).toString();
+    c.systemKey = s.value("systemKey", false).toBool();
     c.accent = s.value("accent", c.accent).toString();
     c.dark = s.value("dark", c.dark).toBool();
     c.minimal = s.value("minimal", c.minimal).toBool();
@@ -123,6 +124,7 @@ void Config::save() const {
     s.setValue("micDenoise", micDenoise);
     s.setValue("hotkey", hotkey);
     s.setValue("muteHotkey", muteHotkey);
+    s.setValue("systemKey", systemKey);
     s.setValue("accent", accent);
     s.setValue("dark", dark);
     s.setValue("minimal", minimal);

@@ -88,6 +88,12 @@ n=$(saves_of 3); wtype -M ctrl -k Caps_Lock -m ctrl; expect_of 3 "$n" "Ctrl+Caps
 n1=$(saves_of 1); n2=$(saves_of 2); wtype -k F10; sleep 3
 if [ "$(saves_of 1)" -gt "$n1" ] || [ "$(saves_of 2)" -gt "$n2" ]; then echo "FAIL F10 alone saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS F10 alone does nothing"; fi
 
+# Bildstrom wie in WaylandCapture::gstArgs: alte Bilder verwerfen statt stauen ("leaky" Warteschlangen).
+# Läuft hier mit Testbild statt PipeWire und einem absichtlich langsamen Abnehmer.
+if gst-launch-1.0 -q videotestsrc num-buffers=120 is-live=true ! video/x-raw,framerate=60/1,width=320,height=180     ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! videoconvert ! videoscale ! videorate     ! video/x-raw,format=NV12,width=320,height=180,framerate=60/1,pixel-aspect-ratio=1/1     ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! fakesink sync=true > "$OUT/gst-leaky.txt" 2>&1; then
+    echo "PASS capture pipeline with leaky queues runs"
+else echo "FAIL capture pipeline with leaky queues"; cat "$OUT/gst-leaky.txt"; FAILS=$((FAILS + 1)); fi
+
 echo "----- portal (wlr) screencopy"
 grep -i -E 'shm|format|buffer|dmabuf|gbm|screencopy|frame|error|fail' "$OUT/xdpw.log" | head -n 40
 finish

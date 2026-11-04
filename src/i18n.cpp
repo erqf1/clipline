@@ -14,6 +14,8 @@ struct Entry { const char* en; const char* t[N]; };
 
 const Entry kTable[] = {
  {"%1 clips", {"%1 Clips","%1 clips","%1 clips","%1 clip","%1 clipes","%1 clips","%1 klipów","%1 klip","Клипов: %1","%1 件のクリップ","%1 个剪辑"}},
+ {"Copy command for a system shortcut", {"Befehl für eine Systemtaste kopieren","Copiar comando para un atajo del sistema","Copier la commande pour un raccourci système","Copia il comando per una scorciatoia di sistema","Copiar comando para um atalho do sistema","Opdracht voor een systeemsneltoets kopiëren","Kopiuj polecenie dla skrótu systemowego","Sistem kısayolu için komutu kopyala","Копировать команду для системной клавиши","システムショートカット用のコマンドをコピー","复制用于系统快捷键的命令"}},
+ {"Copied: %1", {"Kopiert: %1","Copiado: %1","Copié : %1","Copiato: %1","Copiado: %1","Gekopieerd: %1","Skopiowano: %1","Kopyalandı: %1","Скопировано: %1","コピーしました: %1","已复制：%1"}},
  {"1 clip", {"1 Clip","1 clip","1 clip","1 clip","1 clipe","1 clip","1 klip","1 klip","1 клип","1 件のクリップ","1 个剪辑"}},
  {"Acrylic", {"Acryl","Acrílico","Acrylique","Acrilico","Acrílico","Acryl","Akryl","Akrilik","Акрил","アクリル","亚克力"}},
  {"Accent colour", {"Akzentfarbe","Color de acento","Couleur d'accent","Colore di accento","Cor de destaque","Accentkleur","Kolor akcentu","Vurgu rengi","Цвет акцента","アクセントカラー","强调色"}},
