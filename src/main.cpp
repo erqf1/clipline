@@ -326,7 +326,9 @@ int main(int argc, char* argv[]) {
     // Nur eine Instanz: weitere Starts reichen ihren Wunsch weiter
     if (sendToRunning(background ? "noop" : "show")) return 0;
 #ifdef Q_OS_LINUX
-    // So früh wie möglich beim Portal anmelden: Das geht nur vor jedem anderen Portal-Aufruf
+    // Desktop-Datei (auch unter X11: Aktion "Clip speichern" für die Kurzbefehle des Systems), dann so früh wie
+    // möglich beim Portal anmelden: Das geht nur vor jedem anderen Portal-Aufruf
+    ensureDesktopEntry();
     if (WaylandHotkeys::isWayland()) registerPortalApp();
 #endif
 

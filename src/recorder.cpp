@@ -21,17 +21,35 @@ static constexpr int kTsPacket = 188;
 static constexpr qint64 kStallMs = 6000;        // so lange ohne neues Bild = Aufnahme hängt
 static constexpr qint64 kFirstFrameMs = 12000;  // Anlauf (Encoder, erstes Bild) darf länger dauern
 
-// TS-Paket, mit dem ein neues Videobild beginnt: PES-Start mit Stream-ID 0xE0..0xEF
-static bool isVideoStart(const uchar* p) {
-    if (p[0] != 0x47 || !(p[1] & 0x40)) return false;  // Sync-Byte, payload_unit_start_indicator
+// TS-Paket, mit dem ein neues PES-Paket beginnt: Stream-ID (0xE0..0xEF Video, 0xC0..0xDF Ton) und PTS
+// (90 kHz, -1 = keiner); 0 = kein PES-Anfang
+static int pesStart(const uchar* p, qint64* pts) {
+    *pts = -1;
+    if (p[0] != 0x47 || !(p[1] & 0x40)) return 0;  // Sync-Byte, payload_unit_start_indicator
     const int afc = (p[3] >> 4) & 3;
-    if (!(afc & 1)) return false;  // keine Nutzdaten
+    if (!(afc & 1)) return 0;  // keine Nutzdaten
     const int off = afc & 2 ? 5 + p[4] : 4;
-    return off + 4 <= kTsPacket && p[off] == 0 && p[off + 1] == 0 && p[off + 2] == 1 && (p[off + 3] & 0xF0) == 0xE0;
+    if (off + 4 > kTsPacket || p[off] != 0 || p[off + 1] != 0 || p[off + 2] != 1) return 0;
+    const int sid = p[off + 3];
+    if (off + 14 <= kTsPacket && (p[off + 6] & 0xC0) == 0x80 && (p[off + 7] & 0x80)) {
+        const uchar* q = p + off + 9;
+        *pts = (qint64(q[0] >> 1 & 7) << 30) | (qint64(q[1]) << 22) | (qint64(q[2] >> 1) << 15) | (qint64(q[3]) << 7) | (q[4] >> 1);
+    }
+    return sid;
+}
+
+// Abstand zweier 33-Bit-PTS in Sekunden (über den Überlauf nach 26,5 h hinweg)
+static double ptsGap(qint64 a, qint64 b) {
+    constexpr qint64 wrap = qint64(1) << 33;
+    qint64 d = (a - b) % wrap;
+    if (d < 0) d += wrap;
+    if (d >= wrap / 2) d -= wrap;
+    return d / 90000.0;
 }
 
 Recorder::Recorder(QObject* parent) : QObject(parent) {
     clock_.start();
+    wallSkew_ = QDateTime::currentMSecsSinceEpoch() - clock_.elapsed();
     retry_.setSingleShot(true);
     connect(&retry_, &QTimer::timeout, this, &Recorder::launch);
     connect(&watchdog_, &QTimer::timeout, this, &Recorder::checkStall);
@@ -228,6 +246,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     int audioInputs = 0;
     int micInput = -1;  // Eingang mit dem Mikrofon, falls ffmpeg es selbst einliest (macOS/Linux)
     bool audioInVideoInput = false;
+    QString audioSync;  // Linux: Filter vor jeder Tonquelle, der den Ton an der gemeinsamen Uhr hält
 
 #if defined(Q_OS_WIN)
     // Selbsttest: Bild nach N Sekunden enden lassen, der Ton läuft weiter (wie ddagrab nach "Access lost")
@@ -265,6 +284,14 @@ QStringList Recorder::buildArgs(bool withAudio) {
         micInput = 0;
     }
 #else
+    // Bild und Ton auf EINER Uhr: Alle Eingänge liefern Zeitstempel der Systemuhr (x11grab, PulseAudio, die
+    // Wayland-Bilder per use_wallclock). Ohne -copyts setzt ffmpeg jeden Eingang einzeln auf 0 - der Ton beginnt
+    // aber später als das Bild (er wird erst geöffnet, wenn das erste Bild da ist). Dann passten Ton und Bild im
+    // Puffer nicht zusammen, der Versatz war bei jedem Start anders, und ffmpeg drosselte das Bild bis auf wenige
+    // Bilder pro Sekunde, um die "vorauslaufende" Spur zu bremsen. Jetzt: gemeinsamer Nullpunkt (Start - 2 s, damit
+    // nichts negativ wird) für alle Eingänge.
+    const QString clock = QString::number(QDateTime::currentMSecsSinceEpoch() / 1000.0 - 2.0, 'f', 3);
+    a << "-copyts";
     if (wayland_ && wayland_->isOpen()) {
         // Wayland: Rohbilder (NV12, schon in Zielgröße) kommen von GStreamer über stdin
         if (!wayland_->size().isEmpty()) native = wayland_->size();
@@ -273,21 +300,28 @@ QStringList Recorder::buildArgs(bool withAudio) {
         inputScaled = true;
         a << "-thread_queue_size" << "16" << "-f" << "rawvideo" << "-pix_fmt" << "nv12" << "-video_size"
           << QString("%1x%2").arg(out.width()).arg(out.height()) << "-framerate" << fps
-          << "-use_wallclock_as_timestamps" << "1" << "-i" << "pipe:0";
+          << "-use_wallclock_as_timestamps" << "1" << "-itsoffset" << "-" + clock << "-i" << "pipe:0";
     } else {
         const QString display = qEnvironmentVariable("DISPLAY", ":0");
         a << "-f" << "x11grab" << "-framerate" << fps << "-draw_mouse" << "1" << "-video_size"
-          << QString("%1x%2").arg(mon.rect.width()).arg(mon.rect.height()) << "-i"
+          << QString("%1x%2").arg(mon.rect.width()).arg(mon.rect.height()) << "-itsoffset" << "-" + clock << "-i"
           << QString("%1+%2,%3").arg(display).arg(mon.rect.x()).arg(mon.rect.y());
     }
+    // PulseAudio/PipeWire: Zeitstempel = Systemuhr minus Verzögerung des Tons
     if (withAudio && cfg_.systemAudio) {
-        a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-i" << "@DEFAULT_MONITOR@";
+        a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-wallclock" << "1" << "-itsoffset" << "-" + clock
+          << "-i" << "@DEFAULT_MONITOR@";
         ++audioInputs;
     }
     if (withAudio && !cfg_.mic.isEmpty()) {
-        a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-i" << cfg_.mic;
+        a << "-thread_queue_size" << "1024" << "-f" << "pulse" << "-wallclock" << "1" << "-itsoffset" << "-" + clock
+          << "-i" << cfg_.mic;
         micInput = ++audioInputs;
     }
+    // Ton lückenlos an seinen Zeitstempeln halten: Aussetzer (Ton-Server übergelaufen, Standby) mit Stille füllen,
+    // Überlappungen kürzen - sonst verschiebt sich der Ton gegen das Bild. Beide Tonquellen beginnen beim selben
+    // Nullpunkt, damit amix sie richtig übereinanderlegt.
+    audioSync = "aresample=async=1:min_hard_comp=0.1:first_pts=0,";
 #endif
 
     // Video: skalieren + Pixelformat für den Encoder
@@ -306,7 +340,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     const QString sysF = QString("volume=%1").arg(cfg_.systemVolume / 100.0, 0, 'f', 2);
     auto src = [&](int input) {
         if (sysAudio_) return QString("%1:a").arg(input);  // Windows: genau eine Tonquelle, direkt zuordnen
-        fc << QString("[%1:a]%2[s%1]").arg(input).arg(input == micInput ? micF.join(',') : sysF);
+        fc << QString("[%1:a]%2%3[s%1]").arg(input).arg(audioSync, input == micInput ? micF.join(',') : sysF);
         return QString("[s%1]").arg(input);
     };
     QString amap;
@@ -357,6 +391,8 @@ void Recorder::launch() {
     tsCarry_.clear();
     launchedAt_ = clock_.elapsed();
     lastVideo_ = -1;
+    videoPts_ = audioPts_ = -1;
+    gapSecs_ = 0;
 
     const bool withAudio = audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty());
     const QStringList args = buildArgs(withAudio);
@@ -433,20 +469,57 @@ void Recorder::scanVideo(const QByteArray& data, qint64 now) {
         i = std::min<qint64>(kTsPacket - tsCarry_.size(), n);
         tsCarry_.append(data.constData(), i);
         if (tsCarry_.size() < kTsPacket) return;
-        if (isVideoStart(reinterpret_cast<const uchar*>(tsCarry_.constData()))) lastVideo_ = now;
+        notePes(reinterpret_cast<const uchar*>(tsCarry_.constData()), now);
         tsCarry_.clear();
     }
-    for (; i + kTsPacket <= n; i += kTsPacket)
-        if (isVideoStart(p + i)) lastVideo_ = now;
+    for (; i + kTsPacket <= n; i += kTsPacket) notePes(p + i, now);
     if (i < n) tsCarry_.append(data.constData() + i, n - i);
 }
+
+void Recorder::notePes(const uchar* packet, qint64 now) {
+    qint64 pts = -1;
+    const int sid = pesStart(packet, &pts);
+    if ((sid & 0xF0) == 0xE0) {
+        lastVideo_ = now;
+        if (pts >= 0) videoPts_ = pts;
+    } else if (sid >= 0xC0 && sid <= 0xDF && pts >= 0) {
+        audioPts_ = pts;
+    }
+}
+
+// Zeitversatz zwischen Bild und Ton im Puffer (Sekunden, positiv = Bild voraus); 0 = unbekannt / kein Ton
+double Recorder::avGap() const { return videoPts_ >= 0 && audioPts_ >= 0 ? ptsGap(videoPts_, audioPts_) : 0.0; }
 
 // ffmpeg läuft, liefert aber keine Bilder mehr: Unter Windows baut ddagrab die Desktop Duplication nicht neu auf,
 // wenn Windows den Zugriff entzieht (Vollbild-/Auflösungswechsel im Spiel, UAC, Sperrbildschirm). Dann endet nur
 // der Bildstrom, der Ton läuft weiter und jeder Clip scheitert. Neu starten holt das Bild zurück.
 void Recorder::checkStall() {
+#if defined(Q_OS_LINUX)
+    // Standby oder Uhr verstellt: Die Systemuhr springt gegenüber der durchlaufenden Uhr. Bild und Ton tragen
+    // Zeitstempel der Systemuhr und fangen sich danach unterschiedlich schnell - lieber neu starten.
+    const qint64 skew = QDateTime::currentMSecsSinceEpoch() - clock_.elapsed();
+    const bool jumped = std::abs(skew - wallSkew_) > 5000;
+    if (jumped) appLog(QString("record: system clock jumped by %1 s (standby?)").arg((skew - wallSkew_) / 1000));
+    wallSkew_ = skew;
+#endif
     if (!wanted_ || !proc_ || proc_->state() != QProcess::Running) return;
     const qint64 now = clock_.elapsed();
+#if defined(Q_OS_LINUX)
+    if (jumped) {
+        launch();
+        return;
+    }
+    // Bild und Ton laufen im Puffer auseinander (sollte mit der gemeinsamen Uhr nicht mehr vorkommen): Clips
+    // hätten Ton und Bild zeitversetzt. Hält das ein paar Sekunden an, neu starten (höchstens alle 2 Minuten).
+    const double gap = avGap();
+    gapSecs_ = std::abs(gap) > 3.0 ? gapSecs_ + 1 : 0;
+    if (gapSecs_ >= 5 && (lastGapRestart_ < 0 || now - lastGapRestart_ > 120000)) {
+        lastGapRestart_ = now;
+        appLog(QString("record: picture and sound %1 s apart, restarting").arg(gap, 0, 'f', 1));
+        launch();
+        return;
+    }
+#endif
     const bool hadVideo = lastVideo_ >= launchedAt_;
     if (now - (hadVideo ? lastVideo_ : launchedAt_) < (hadVideo ? kStallMs : kFirstFrameMs)) return;
     ++stallRestarts_;

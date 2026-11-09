@@ -29,7 +29,7 @@ QString randomToken() { return QString("clipline%1").arg(QRandomGenerator::globa
 uint portalProperty(const QString& name) {
     QDBusMessage msg = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.DBus.Properties", "Get");
     msg.setArguments({QString(kScreenCast), name});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 5000);
+    const QDBusMessage reply = portalBus().call(msg, QDBus::Block, 5000);
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return 0;
     return reply.arguments().first().value<QDBusVariant>().variant().toUInt();
 }
@@ -69,13 +69,13 @@ void WaylandCapture::open(const QString& restoreToken) {
 
 void WaylandCapture::close() {
     if (!session_.isEmpty()) {
-        QDBusConnection::sessionBus().call(QDBusMessage::createMethodCall(kService, session_, "org.freedesktop.portal.Session", "Close"),
+        portalBus().call(QDBusMessage::createMethodCall(kService, session_, "org.freedesktop.portal.Session", "Close"),
                                            QDBus::NoBlock);
         session_.clear();
     }
     node_ = 0;
     if (!requestPath_.isEmpty())
-        QDBusConnection::sessionBus().disconnect(kService, requestPath_, kRequest, "Response", this,
+        portalBus().disconnect(kService, requestPath_, kRequest, "Response", this,
                                                  SLOT(onResponse(uint, QVariantMap)));
     requestPath_.clear();
     step_ = Idle;
@@ -84,7 +84,7 @@ void WaylandCapture::close() {
 // Die Antwort kommt als Signal am Request-Objekt. Dessen Pfad ist vorhersagbar - vor dem Aufruf abonnieren,
 // sonst kann die Antwort (bei gespeichertem Token sofort) verloren gehen.
 void WaylandCapture::listen(const QString& path) {
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = portalBus();
     if (!requestPath_.isEmpty())
         bus.disconnect(kService, requestPath_, kRequest, "Response", this, SLOT(onResponse(uint, QVariantMap)));
     requestPath_ = path;
@@ -92,7 +92,7 @@ void WaylandCapture::listen(const QString& path) {
 }
 
 void WaylandCapture::request(const QString& method, QList<QVariant> args, QVariantMap options) {
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = portalBus();
     const QString handle = randomToken();
     options["handle_token"] = handle;
     QString sender = bus.baseService().mid(1);
@@ -178,7 +178,7 @@ int WaylandCapture::openRemote() {
     if (!isOpen()) return -1;
     QDBusMessage msg = QDBusMessage::createMethodCall(kService, kPath, kScreenCast, "OpenPipeWireRemote");
     msg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QVariantMap()});
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 10000);
+    const QDBusMessage reply = portalBus().call(msg, QDBus::Block, 10000);
     if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
         appLog("record: OpenPipeWireRemote failed: " + reply.errorMessage());
         return -1;

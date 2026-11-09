@@ -31,6 +31,7 @@ public:
     qint64 bufferedBytes() const { return total_ - (chunks_.empty() ? total_ : chunks_.front().off); }
     QString encoder() const { return encoder_; }
     int stallRestarts() const { return stallRestarts_; }
+    double avGap() const;  // Versatz Bild/Ton im Puffer in Sekunden (positiv = Bild voraus), 0 = unbekannt
     // Letzte b.seconds speichern; hat der Knopf weniger Auflösung/Bildrate/Qualität als die Aufnahme, wird umgerechnet
     void saveClip(const ClipButton& b);
 
@@ -84,4 +85,9 @@ private:
     // Wächter: ffmpeg kann weiterlaufen, obwohl keine Bilder mehr kommen (nur noch Ton im Puffer)
     qint64 launchedAt_ = 0, lastVideo_ = -1;  // clock_-Zeit des Starts / des letzten Videobilds
     QByteArray tsCarry_;                      // angefangenes TS-Paket aus dem letzten Lesevorgang
+    // Wächter Bild/Ton: letzte PTS (90 kHz) im Strom, Sekunden mit großem Versatz, letzter Neustart deswegen
+    qint64 videoPts_ = -1, audioPts_ = -1, lastGapRestart_ = -1;
+    int gapSecs_ = 0;
+    qint64 wallSkew_ = 0;  // Systemuhr minus clock_ (springt bei Standby)
+    void notePes(const uchar* packet, qint64 now);
 };
