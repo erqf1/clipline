@@ -10,12 +10,17 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QDBusVariant>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QKeySequence>
+#include <QPixmap>
+#include <QThread>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include "i18n.h"
+#include "look.h"
 #include "platform.h"
 
 namespace {
@@ -115,13 +120,120 @@ bool run(const QString& program, const QStringList& args) {
 }
 }  // namespace
 
+QDBusConnection portalBus() {
+    // gleicher Name = dieselbe Verbindung bei jedem Aufruf
+    return QDBusConnection::connectToBus(QDBusConnection::SessionBus, QStringLiteral("clipline-portal"));
+}
+
+namespace {
+// Programmpfad für Exec= in einer Desktop-Datei (Leerzeichen, Anführungszeichen, % maskiert)
+QString desktopExec(const QString& path) {
+    static const QRegularExpression plain("^[A-Za-z0-9_./+-]+$");
+    if (plain.match(path).hasMatch()) return path;
+    QString q;
+    for (const QChar c : path) {
+        if (c == '"' || c == '`' || c == '$' || c == '\\') q += "\\\\";  // Exec- und Datei-Ebene
+        if (c == '%') q += '%';
+        q += c;
+    }
+    return "\"" + q + "\"";
+}
+
+// Erstes Programm aus "Exec=..." einer Desktop-Datei (leer = keine Exec-Zeile)
+QString desktopProgram(const QString& text) {
+    static const QRegularExpression exec(R"(^Exec=\s*(.*)$)", QRegularExpression::MultilineOption);
+    const QRegularExpressionMatch m = exec.match(text);
+    if (!m.hasMatch()) return QString();
+    const QString v = m.captured(1).replace("\\\\", "\\");  // Datei-Ebene
+    if (!v.startsWith('"')) return v.section(' ', 0, 0);
+    QString out;
+    for (int i = 1; i < v.size(); ++i) {  // Exec-Ebene: "…" mit \x
+        if (v[i] == '\\' && i + 1 < v.size()) out += v[++i];
+        else if (v[i] == '"') break;
+        else out += v[i];
+    }
+    return out.replace("%%", "%");
+}
+}  // namespace
+
+void ensureDesktopEntry() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    const QString name = QString(kLinuxAppId) + ".desktop";
+    const QString own = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation) + "/" + name;
+    const QString ownAbs = QFileInfo(own).absoluteFilePath();
+    QString found;
+    bool packaged = false;  // eine Desktop-Datei des Pakets (z. B. /usr/share/applications)
+    for (const QString& f : QStandardPaths::locateAll(QStandardPaths::ApplicationsLocation, name)) {
+        if (QFileInfo(f).absoluteFilePath() == ownAbs) found = f;
+        else packaged = true;
+    }
+    if (packaged) {
+        // Von früher (.tar-Version) selbst angelegte Datei würde die des Pakets verdecken - weg damit
+        QFile f(own);
+        if (!found.isEmpty() && f.open(QIODevice::ReadOnly) && f.readAll().contains("X-Clipline-Generated=true")) {
+            f.close();
+            QFile::remove(own);
+            appLog("desktop: removed " + own + " (the installed package has its own)");
+        }
+        return;
+    }
+    QString program = selfPath();
+    if (!found.isEmpty()) {
+        QFile f(found);
+        const QString text = f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+        const QString listed = desktopProgram(text);
+        // Programm der Datei gibt es noch (z. B. von install.sh): dabei bleiben, nur die Aktion ergänzen
+        const bool listedOk = !listed.isEmpty() && QFileInfo(listed).isExecutable();
+        if (listedOk && text.contains("[Desktop Action save]")) return;
+        if (listedOk) program = QFileInfo(listed).absoluteFilePath();
+    }
+    const QString exec = desktopExec(program);
+    const QString text = QString("[Desktop Entry]\nType=Application\nName=Clipline\nGenericName=Screen Clipper\n"
+                                 "Comment=Save the last moments of your screen with one key\nExec=%1\nIcon=clipline\n"
+                                 "Terminal=false\nCategories=AudioVideo;Video;Recorder;\nKeywords=clip;record;replay;screen;game;\n"
+                                 "Actions=save;\nX-Clipline-Generated=true\n\n[Desktop Action save]\nName=%2\nExec=%1 --save\n")
+                             .arg(exec, L("Save clip"));
+    QDir().mkpath(QFileInfo(own).absolutePath());
+    QFile out(own);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) || out.write(text.toUtf8()) < 0) {
+        appLog("desktop: could not write " + own);
+        return;
+    }
+    out.close();
+    appLog(QString("desktop: %1 %2 (Exec=%3)").arg(found.isEmpty() ? "created" : "updated", own, program));
+    // Symbol dazu, wenn das System keins hat (.tar-Version ohne install.sh)
+    const QString iconRel = "icons/hicolor/256x256/apps/clipline.png";
+    if (QStandardPaths::locate(QStandardPaths::GenericDataLocation, iconRel).isEmpty()) {
+        const QString icon = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/" + iconRel;
+        QDir().mkpath(QFileInfo(icon).absolutePath());
+        if (!QFileInfo(QCoreApplication::applicationDirPath() + "/icon.png").exists() ||
+            !QFile::copy(QCoreApplication::applicationDirPath() + "/icon.png", icon))
+            cliplineIcon().pixmap(256, 256).save(icon, "PNG");
+    }
+    // KDE liest Programme aus einem Zwischenspeicher: gleich auffrischen, damit die Einstellungen Clipline kennen
+    for (const char* tool : {"kbuildsycoca6", "kbuildsycoca5"})
+        if (const QString exe = QStandardPaths::findExecutable(tool); !exe.isEmpty()) {
+            QProcess::startDetached(exe, {});
+            break;
+        }
+}
+
 void registerPortalApp() {
     static bool done = false;
     if (done) return;
     done = true;
+    ensureDesktopEntry();
     QDBusMessage reg = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.host.portal.Registry", "Register");
     reg.setArguments({QString(kLinuxAppId), QVariantMap()});
-    const QDBusMessage r = QDBusConnection::sessionBus().call(reg, QDBus::Block, 3000);
+    QDBusMessage r;
+    // Eine eben angelegte Desktop-Datei sieht das Portal erst nach einem Moment ("App info not found")
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        r = portalBus().call(reg, QDBus::Block, 3000);
+        if (r.type() == QDBusMessage::ReplyMessage || !r.errorMessage().contains("not found", Qt::CaseInsensitive)) break;
+        QThread::msleep(300);
+    }
     appLog(r.type() == QDBusMessage::ReplyMessage ? QString("portal: registered as %1").arg(kLinuxAppId)
                                                   : "portal: register not possible: " + r.errorMessage());
 }
@@ -198,7 +310,7 @@ WaylandHotkeys::WaylandHotkeys() {
     } else if (!qEnvironmentVariableIsEmpty("SWAYSOCK") && !QStandardPaths::findExecutable("swaymsg").isEmpty()) {
         backend_ = Sway;
     } else {
-        QDBusConnection bus = QDBusConnection::sessionBus();
+        QDBusConnection bus = portalBus();
         QDBusMessage get = QDBusMessage::createMethodCall(kService, kPath, "org.freedesktop.DBus.Properties", "Get");
         get.setArguments({QString(kShortcuts), QString("version")});
         const QDBusMessage reply = bus.call(get, QDBus::Block, 3000);
@@ -379,7 +491,7 @@ void WaylandHotkeys::portalRebind() {
     if (keys_.isEmpty()) return;
     const QString want = portalWanted();
     if (want == bound_ && !session_.isEmpty()) return;
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = portalBus();
     if (!session_.isEmpty()) {
         bus.call(QDBusMessage::createMethodCall(kService, session_, "org.freedesktop.portal.Session", "Close"), QDBus::NoBlock);
         session_.clear();
@@ -393,7 +505,7 @@ void WaylandHotkeys::portalRebind() {
 }
 
 void WaylandHotkeys::portalRequest(const QString& method, QList<QVariant> args, QVariantMap options) {
-    QDBusConnection bus = QDBusConnection::sessionBus();
+    QDBusConnection bus = portalBus();
     const QString handle = randomToken();
     options["handle_token"] = handle;
     QString sender = bus.baseService().mid(1);
@@ -419,7 +531,7 @@ void WaylandHotkeys::portalRequest(const QString& method, QList<QVariant> args, 
             return;
         }
         if (r.value().path() != requestPath_) {  // sehr alte Portale nutzen einen anderen Pfad
-            QDBusConnection b = QDBusConnection::sessionBus();
+            QDBusConnection b = portalBus();
             b.disconnect(kService, requestPath_, kRequest, "Response", this, SLOT(onResponse(uint, QVariantMap)));
             requestPath_ = r.value().path();
             b.connect(kService, requestPath_, kRequest, "Response", this, SLOT(onResponse(uint, QVariantMap)));
@@ -479,7 +591,7 @@ void WaylandHotkeys::onResponse(uint response, const QVariantMap& results) {
                 askedConfigure_ = true;
                 QDBusMessage cfg = QDBusMessage::createMethodCall(kService, kPath, kShortcuts, "ConfigureShortcuts");
                 cfg.setArguments({QVariant::fromValue(QDBusObjectPath(session_)), QString(), QVariantMap()});
-                QDBusConnection::sessionBus().call(cfg, QDBus::NoBlock);
+                portalBus().call(cfg, QDBus::NoBlock);
                 appLog("portal: no key assigned, opened the system shortcut dialog");
             }
             emit problem(L("Your desktop did not set up the hotkey. Set a key for Clipline in your system settings "

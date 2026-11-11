@@ -3,13 +3,21 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Von Hand starten: mit Version (z. B. 1.9.2) wird veröffentlicht und das Tag v<Version> angelegt, ohne Version nur gebaut
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 1.9.2 (empty = build only)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 env:
   QT_VERSION: '6.8.3'
+  # Tag des Releases: das gepushte Tag oder v<Version> beim Start von Hand; leer = nur bauen
+  CL_TAG: ${{ github.ref_type == 'tag' && github.ref_name || (inputs.version != '' && format('v{0}', inputs.version) || '') }}
 
 jobs:
   windows:
@@ -42,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
-          $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
+          $ver = if ($env:CL_TAG) { $env:CL_TAG.TrimStart('v') } else { '0.0.0' }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" packaging/windows/clipline.iss
           Move-Item dist/Clipline-windows-x64-setup.exe .
       - uses: actions/upload-artifact@v4
@@ -67,7 +75,7 @@ jobs:
           strip build/clipline
       - name: Version
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then echo "VER=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"; else echo "VER=0.0.0" >> "$GITHUB_ENV"; fi
+          if [ -n "${CL_TAG}" ]; then echo "VER=${CL_TAG#v}" >> "$GITHUB_ENV"; else echo "VER=0.0.0" >> "$GITHUB_ENV"; fi
       - name: deb package
         run: |
           DESTDIR="$PWD/pkg/deb" cmake --install build
@@ -110,7 +118,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           trap 'echo "::error title=arch step failed::line $LINENO: $BASH_COMMAND"' ERR
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then VER="${GITHUB_REF_NAME#v}"; else VER="0.0.0"; fi
+          if [ -n "${CL_TAG}" ]; then VER="${CL_TAG#v}"; else VER="0.0.0"; fi
           useradd -m builder
           mkdir /home/builder/pkg
           tar czf /home/builder/pkg/clipline-src.tar.gz --exclude=.git --exclude=build --exclude=dist --exclude=docs .
@@ -167,7 +175,7 @@ jobs:
           path: Clipline-macos-${{ matrix.name }}.dmg
 
   release:
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success' }}
+    if: ${{ always() && (startsWith(github.ref, 'refs/tags/v') || inputs.version != '') && needs.windows.result == 'success' && needs.linux.result == 'success' && needs.macos.result == 'success' }}
     needs: [windows, linux, arch, macos]
     runs-on: ubuntu-latest
     steps:
@@ -177,5 +185,7 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.CL_TAG }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           generate_release_notes: true
