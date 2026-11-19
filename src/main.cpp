@@ -22,6 +22,7 @@
 #include "i18n.h"
 #include "look.h"
 #include "setup.h"
+#include "siteshots.h"
 #ifdef Q_OS_LINUX
 #include "wayland_hotkeys.h"
 #endif
@@ -315,6 +316,8 @@ int main(int argc, char* argv[]) {
         f.close();
         return rc;
     }
+    // Bilder für die Website (unsichtbar): --siteshots <ordner>
+    if (const int ss = args.indexOf("--siteshots"); ss >= 0 && ss + 1 < args.size()) return siteShots(args[ss + 1]);
     // Entwickler-Test: Mikrofon-Kette auf eine Datei anwenden (--micfile in.raw out.raw gate denoise)
     if (const int mf = args.indexOf("--micfile"); mf >= 0 && mf + 4 < args.size()) {
         MicTuning t;

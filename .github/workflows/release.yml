@@ -53,6 +53,44 @@ jobs:
           $ver = if ($env:CL_TAG) { $env:CL_TAG.TrimStart('v') } else { '0.0.0' }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" packaging/windows/clipline.iss
           Move-Item dist/Clipline-windows-x64-setup.exe .
+      - name: Installer test (desktop shortcut only on first install)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path Clipline-windows-x64-setup.exe).Path
+          $dir = Join-Path $env:RUNNER_TEMP 'cl-inst'
+          $lnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Clipline.lnk'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{4F2C9A61-7D3B-4E8A-A5C2-9B1E6D0F3A77}_is1'
+          function Run-Setup([string[]]$a) {
+            $p = Start-Process -Wait -PassThru -FilePath $setup -ArgumentList ($a + @('/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=`"$dir`""))
+            if ($p.ExitCode -ne 0) { throw "setup exit $($p.ExitCode)" }
+          }
+          # Erst-Installation mit Desktop-Symbol (wie ein Haken im Assistenten)
+          function Install { Run-Setup @('/VERYSILENT', '/TASKS=desktopicon') }
+          # Update genau wie der eingebaute Updater (src/updater.cpp)
+          function Update { Run-Setup @('/SILENT', '/CLOSEAPPLICATIONS', '/FORCECLOSEAPPLICATIONS') }
+          function Uninstall {
+            Start-Process -Wait -FilePath (Join-Path $dir 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' | Out-Null
+            for ($i = 0; $i -lt 60 -and ((Test-Path $key) -or (Test-Path $lnk)); $i++) { Start-Sleep -Seconds 1 }
+            if (Test-Path $key) { throw 'uninstall did not finish' }
+          }
+          function Check([bool]$ok, [string]$what) { if (-not $ok) { throw "FAILED: $what" }; "ok: $what" }
+
+          Install
+          Check (Test-Path $lnk) 'first install creates the desktop shortcut'
+          $t0 = (Get-Item $lnk).LastWriteTimeUtc.Ticks
+          Start-Sleep -Seconds 2
+          Update
+          Check ((Test-Path $lnk) -and (Get-Item $lnk).LastWriteTimeUtc.Ticks -eq $t0) 'update leaves the shortcut untouched'
+          Uninstall
+          Check (-not (Test-Path $lnk)) 'uninstall removes the shortcut'
+
+          Install
+          Remove-Item $lnk
+          Update
+          Check (-not (Test-Path $lnk)) 'deleted shortcut stays deleted after an update'
+          Uninstall
+          Check (-not (Test-Path (Join-Path $dir 'Clipline.exe'))) 'uninstall removes the program'
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -179,6 +217,7 @@ jobs:
     needs: [windows, linux, arch, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -188,4 +227,5 @@ jobs:
           tag_name: ${{ env.CL_TAG }}
           target_commitish: ${{ github.sha }}
           files: dist/*
-          generate_release_notes: true
+          # Kurze Notizen auf Deutsch, Details auf mert.win/clip/changelog.html
+          body_path: .github/release-notes.md

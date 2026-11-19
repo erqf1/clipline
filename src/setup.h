@@ -66,6 +66,12 @@ private:
     int cachedH_ = -1, cachedIdx_ = -1;
 };
 
+// Bilder für die Website (--siteshots): Beispiel-Mikrofone und ein fester Pegel statt echter Geräte
+namespace SiteShots {
+inline QStringList mics;           // leer = echte Geräteliste
+inline double micLevelDb = 1.0;    // > 0 = echter Pegel
+}
+
 // Live-Pegel des Mikrofons mit der Schwelle der Rauschsperre: grün = kommt in den Clip,
 // grau = wird als Hintergrundgeräusch stummgeschaltet
 class MicMeter : public QWidget {
