@@ -14,7 +14,7 @@ ERGEBNIS CLOUD-SESSION clipline-icon
      Release-Notizen auf Deutsch mit Link auf https://mert.win/clip/changelog.html
    - CI: Release-Workflow komplett grün (Windows inkl. neuem Installer-Test, Linux, Arch, macOS x2, release).
      Linux test: wayland, kde, siteshots grün. x11 (current) und x11 (v1.7.0) hingen beim ersten Lauf 25 min in
-     apt-get (Paketserver, vor dem Bauen) und wurden abgebrochen; neu gestartet, Ergebnis steht beim Schreiben noch aus (wird nachgetragen)
+     apt-get (Paketserver, vor dem Bauen) und wurden abgebrochen; zweiter Versuch lief beim Schreiben noch: x11 (v1.7.0) im Test-Schritt (darf ohnehin scheitern), x11 (current) hing erneut bei apt-get. Ergebnis bitte unter https://github.com/erqf1/clipline/actions/runs/44520432282 prüfen
 
 3. Was geändert wurde
    - packaging/windows/clipline.iss: [Code] erkennt eine vorherige Installation am Uninstall-Eintrag (HKLM64, HKLM32, HKCU).
@@ -38,6 +38,7 @@ ERGEBNIS CLOUD-SESSION clipline-icon
    - Nicht getestet: der eingebaute Updater von 1.9.2 auf 1.9.3 auf einem echten Windows-PC.
 
 5. Offene Punkte / was der Nutzer tun muss
+   - X11-Linux-Test prüfen (Link oben). Hängt er wieder bei apt-get, ist das der Paketserver und nicht der Code; dann neu starten.
    - PR erqf1/clipline#1 (1.9.2) und diesen Branch nach main bringen, sonst bauen spätere Sessions auf 1.9.1 auf.
      Diesen Branch am einfachsten nach #1 mergen oder einen PR von claude/happy-albattani-k8ril0 nach main öffnen.
    - Einmal auf dem eigenen PC: Clipline-Update über den eingebauten Updater, prüfen, dass das Desktop-Symbol bleibt.
