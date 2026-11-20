@@ -49,7 +49,7 @@ void MicMeter::setDevice(const QString& mic) {
     device_ = mic;
     meter_.stop();
     timer_.stop();
-    if (isVisible() && !device_.isEmpty() && meter_.start(device_)) timer_.start();
+    if (isVisible() && !device_.isEmpty() && SiteShots::micLevelDb > 0 && meter_.start(device_)) timer_.start();
     update();
 }
 
@@ -73,7 +73,9 @@ void MicMeter::paintEvent(QPaintEvent*) {
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(128, 128, 128, 45));
     p.drawRoundedRect(r, 4, 4);
-    const double level = timer_.isActive() ? meter_.levelDb() : kMeterMin;
+    const double level = SiteShots::micLevelDb <= 0 && !device_.isEmpty() ? SiteShots::micLevelDb
+                         : timer_.isActive()                              ? meter_.levelDb()
+                                                                          : kMeterMin;
     const bool open = threshold_ <= -80 || level > threshold_;
     QRectF fill = r;
     fill.setRight(xOf(level));
@@ -652,7 +654,7 @@ QWidget* ConfigPages::soundPage() {
     auto* form = new QFormLayout;
     auto* mic = new QComboBox;
     mic->addItem(L("None"), "");
-    for (const QString& m : listMicrophones()) mic->addItem(m, m);
+    for (const QString& m : SiteShots::mics.isEmpty() ? listMicrophones() : SiteShots::mics) mic->addItem(m, m);
     mic->setCurrentIndex(std::max(0, mic->findData(cfg_.mic)));
     form->addRow(L("Microphone"), mic);
     v->addLayout(form);
