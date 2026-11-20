@@ -77,6 +77,11 @@ if [ "${CL_BUILD:-current}" = current ]; then
     xdotool key F10
     sleep 6
     if [ "$(count)" -gt "$before" ]; then echo "FAIL F10 alone saves a clip"; FAILS=$((FAILS + 1)); else echo "PASS F10 alone does nothing"; fi
+    # Wie die .tar-Version ohne install.sh: Clipline legt seine Desktop-Datei selbst an (sonst kennt das Portal die
+    # App nicht), mit der Aktion "Clip speichern" für die Kurzbefehle des Systems
+    DESK="$HOME/.local/share/applications/win.mert.Clipline.desktop"
+    if grep -qxF "Exec=$BIN" "$DESK" 2>/dev/null && grep -qxF "Exec=$BIN --save" "$DESK"; then echo "PASS desktop file with save action created"
+    else echo "FAIL desktop file missing or wrong"; cat "$DESK" 2>/dev/null; FAILS=$((FAILS + 1)); fi
 fi
 
 finish

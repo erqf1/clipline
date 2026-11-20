@@ -1,4 +1,5 @@
 #pragma once
+#include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusObjectPath>
 #include <QLocalSocket>
@@ -13,7 +14,19 @@ class GlobalHotkey;
 
 // Beim Desktop-Portal als "win.mert.Clipline" anmelden. Muss vor jedem anderen Portal-Aufruf passieren,
 // sonst kennt das Portal die App nicht (KDE/GNOME merken sich Tasten und Freigaben dann nicht).
+// Legt vorher die Desktop-Datei an, falls keine da ist (ensureDesktopEntry) - ohne sie lehnt das Portal ab.
 void registerPortalApp();
+
+// Eigene D-Bus-Verbindung nur für das Desktop-Portal. Die Anmeldung gilt pro Verbindung und geht nur vor dem
+// ersten Portal-Aufruf; auf der allgemeinen Verbindung könnte Qt selbst schon das Portal gefragt haben
+// ("Registered too late"). Alle Portal-Aufrufe und -Signale (Tasten, Bildschirmfreigabe) laufen hierüber.
+QDBusConnection portalBus();
+
+// Desktop-Datei win.mert.Clipline.desktop (+ Symbol) in ~/.local/share anlegen, wenn das System keine kennt
+// (.tar-Version ohne install.sh) oder ihr Programm fehlt. Ohne sie kennt das Portal die App-ID nicht: KDE legte
+// die Clip-Taste dann unter einem Zufallsnamen an, in den Systemeinstellungen tauchte Clipline nicht auf.
+// Die Datei hat die Aktion "Clip speichern" (clipline --save) - die kann man in KDE/GNOME auf eine Taste legen.
+void ensureDesktopEntry();
 
 // Globale Tasten unter Wayland. Ein X11-Grab sieht dort nur Tastendrücke in X11-Fenstern - Clipline bekam
 // die Clip-Taste in Spielen und anderen Programmen nie mit ("Clippen geht unter Linux nicht").

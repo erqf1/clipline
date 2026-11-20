@@ -8,3 +8,9 @@ Icon=clipline
 Terminal=false
 Categories=AudioVideo;Video;Recorder;
 Keywords=clip;record;replay;screen;game;
+Actions=save;
+
+[Desktop Action save]
+Name=Save clip
+Name[de]=Clip speichern
+Exec=clipline --save

@@ -382,8 +382,8 @@ void Controller::saveClipButton(int i) {
     if (i < 0 || i >= buttons.size()) return;
     Recorder* rec = recFor(eff.buttonMonitor(i));
     if (!rec) return;
-    appLog(QString("save: clip button %1 (%2 s), buffered %3 s").arg(i + 1).arg(buttons[i].seconds)
-               .arg(rec->bufferedSeconds(), 0, 'f', 1));
+    appLog(QString("save: clip button %1 (%2 s), buffered %3 s, picture/sound offset %4 s").arg(i + 1).arg(buttons[i].seconds)
+               .arg(rec->bufferedSeconds(), 0, 'f', 1).arg(rec->avGap(), 0, 'f', 2));
     if (!rec->wanted()) {
         if (cfg_.sound) playErrorSound();
         notify("Clipline", L("Recording is paused – no clip was saved."), QSystemTrayIcon::Warning, 5000);
