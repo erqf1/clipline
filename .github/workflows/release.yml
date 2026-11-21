@@ -46,6 +46,19 @@ jobs:
           Copy-Item $ff dist/Clipline/ffmpeg.exe
           Copy-Item LICENSE, README.md dist/Clipline/
           Compress-Archive -Path dist/Clipline -DestinationPath Clipline-windows-x64.zip
+      - name: Selftest (record a clip, save settings afterwards)
+        shell: pwsh
+        run: |
+          # Echte Aufnahme auf dem Runner (Desktop Duplication oder GDI als Ausweichweg) und danach zweimal
+          # Einstellungen speichern - das stürzte bis 1.9.3 jedes Mal ab
+          $d = Join-Path $env:RUNNER_TEMP 'selftest'
+          $p = Start-Process -Wait -PassThru -FilePath (Resolve-Path dist/Clipline/Clipline.exe) -ArgumentList '--selftest', $d, '40'
+          Get-Content (Join-Path $d 'selftest.txt')
+          $log = Join-Path $env:LOCALAPPDATA 'WSoftware\Clipline\clipline.log'
+          if (Test-Path $log) { Get-Content $log -Tail 25 }
+          $t = Get-Content (Join-Path $d 'selftest.txt') -Raw
+          if ($t -notmatch 'settings applied twice, gallery visible') { throw 'saving the settings crashed' }
+          if ($t -notmatch 'clip ok=1') { throw "no clip recorded (exit $($p.ExitCode))" }
       - name: Installer
         shell: pwsh
         run: |

@@ -23,6 +23,7 @@ public:
     QString keyText(const QString& sequence) const;  // Taste zum Anzeigen (unter KDE/GNOME die, die das System nutzt)
     const Recorder& recorder() const { return *recs_.front().second; }  // Aufnahme von Clip-Knopf 1
     bool listen();  // Einzelinstanz: nimmt Befehle von weiteren Starts entgegen
+    void applySettings(const Config& c) { applyConfig(c, false); }  // wie "Speichern" im Einstellungsfenster
     GalleryWindow* gallery() const { return gallery_; }
     static inline bool noRecord = false;  // Selbsttest: nur Fenster rendern
     static inline bool quiet = false;  // Selbsttest: kein Tray, kein Hotkey, nichts speichern

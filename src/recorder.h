@@ -62,6 +62,8 @@ private:
     void verifyClip(const QString& out, int secs, bool wantAudio);
     void copyClip(QTemporaryFile* tmp, const QString& out, int secs, bool wantAudio);
     bool captureChanged(const Config& a, const Config& b) const;
+    bool fallBack(const QString& err);
+    void checkFrameRate(qint64 now);  // echte Bildrate messen, ins Protokoll, bei viel zu wenig einmal warnen  // Aufnahme startet nicht: einfachere Aufnahmeart / Software-Encoder probieren
     MicTuning tuning() const;
     bool startWayland();  // false = Portal-Dialog läuft noch / nicht möglich
     void applyTuning();
@@ -81,6 +83,12 @@ private:
     QTimer retry_, watchdog_;
     bool wanted_ = false, audioOk_ = true, gotData_ = false, micMuted_ = false;
     int fails_ = 0, stallRestarts_ = 0;
+    int noFrameStarts_ = 0;   // Starts hintereinander, die nie ein Bild geliefert haben
+    // Echte Bildrate im Puffer: Bilder seit fpsSince_ (clock_-Zeit), wie oft hintereinander zu niedrig, schon gewarnt
+    int fpsFrames_ = 0, slowWindows_ = 0;
+    qint64 fpsSince_ = -1, lastFpsLog_ = -1;
+    bool warnedSlow_ = false;
+    bool forceGdi_ = false;   // Windows: Desktop Duplication geht hier nicht (z. B. Laptop mit zwei Grafikkarten)
     QByteArray errTail_;
     // Wächter: ffmpeg kann weiterlaufen, obwohl keine Bilder mehr kommen (nur noch Ton im Puffer)
     qint64 launchedAt_ = 0, lastVideo_ = -1;  // clock_-Zeit des Starts / des letzten Videobilds

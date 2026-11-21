@@ -62,6 +62,11 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
+      - name: Selftest (settings saved afterwards must not crash)
+        run: |
+          QT_QPA_PLATFORM=offscreen build/clipline --selftest st 0 2>/dev/null
+          cat st/selftest.txt
+          grep -q "settings applied twice, gallery visible" st/selftest.txt
       - name: Images
         run: |
           sh tools/siteshots.sh build/clipline siteshots 2>&1 | grep -v 'plugin does not support'

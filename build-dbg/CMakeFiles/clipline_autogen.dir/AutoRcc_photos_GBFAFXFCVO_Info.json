@@ -1,0 +1,25 @@
+{
+	"BUILD_DIR" : "/home/user/clipline/build-dbg/clipline_autogen",
+	"CMAKE_BINARY_DIR" : "/home/user/clipline/build-dbg",
+	"CMAKE_CURRENT_BINARY_DIR" : "/home/user/clipline/build-dbg",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/home/user/clipline",
+	"CMAKE_SOURCE_DIR" : "/home/user/clipline",
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "/home/user/clipline/build-dbg/clipline_autogen/include",
+	"INPUTS" : 
+	[
+		"/home/user/clipline/assets/photos/nest.jpg",
+		"/home/user/clipline/assets/photos/hedgehog.jpg",
+		"/home/user/clipline/assets/photos/kingfisher.jpg"
+	],
+	"LOCK_FILE" : "/home/user/clipline/build-dbg/CMakeFiles/clipline_autogen.dir/AutoRcc_photos_GBFAFXFCVO_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "photos" ],
+	"OUTPUT_CHECKSUM" : "GBFAFXFCVO",
+	"OUTPUT_NAME" : "qrc_photos.cpp",
+	"RCC_EXECUTABLE" : "/usr/lib/qt6/libexec/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/home/user/clipline/build-dbg/CMakeFiles/clipline_autogen.dir/AutoRcc_photos_GBFAFXFCVO_Used.txt",
+	"SOURCE" : "/home/user/clipline/assets/photos.qrc",
+	"VERBOSITY" : 0
+}

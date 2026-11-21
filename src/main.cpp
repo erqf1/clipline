@@ -233,6 +233,22 @@ static int selfTest(QApplication& app, const QString& dir, int secs, const QStri
             if (l->text() == QDir::toNativeSeparators(cfg.clipsDir)) l->setText(QDir::toNativeSeparators("C:/Users/You/Videos/Clipline"));
     g->grab().save(dir + "/gallery.png");
     say("gallery saved");
+    // Einstellungen im Nachhinein speichern (wie im Fenster): stürzte bis 1.9.3 bei jedem Mal ab
+    {
+        Config c2 = ctl.config();
+        c2.dark = !c2.dark;
+        c2.clipSeconds = 30;
+        c2.extraButtons << ClipButton{"F10", 10, 720, 30, 0, QString()};
+        ctl.applySettings(c2);
+        QApplication::processEvents();
+        c2.dark = !c2.dark;
+        c2.extraButtons.clear();
+        ctl.applySettings(c2);
+        for (int i = 0; i < 10; ++i) QApplication::processEvents(QEventLoop::AllEvents, 20);
+        say(QString("settings applied twice, gallery %1").arg(ctl.gallery() && ctl.gallery()->isVisible() ? "visible" : "GONE"));
+        g = ctl.gallery();
+        if (g) g->setAttribute(Qt::WA_DontShowOnScreen);
+    }
     // Weiches Scrollen: zwei Rastungen am Mausrad, Position über die Zeit mitschreiben
     if (auto* lv = g->findChild<QListView*>(); lv && qEnvironmentVariableIsSet("CLIPLINE_TESTSCROLL")) {
         QScrollBar* sb = lv->verticalScrollBar();

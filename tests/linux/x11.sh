@@ -20,6 +20,7 @@ press() { xdotool keydown ctrl alt s; sleep 0.15; xdotool keyup s alt ctrl; }
 
 press
 check "hotkey" 1 5
+check_fps "smooth clip (30 fps set)" 24
 
 python3 "$DIR/grab.py" 14 &
 GRAB=$!

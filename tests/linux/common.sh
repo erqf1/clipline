@@ -40,6 +40,17 @@ count() { ls "$OUT"/clips/*.mp4 2>/dev/null | wc -l; }
 wait_clips() { for _ in $(seq 1 60); do [ "$(count)" -ge "$1" ] && return 0; sleep 0.5; done; return 1; }
 # Länge des neuesten Clips in Sekunden (ganzzahlig)
 last_len() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$(ls -t "$OUT"/clips/*.mp4 | head -1)" 2>/dev/null | cut -d. -f1; }
+# Bilder pro Sekunde im neuesten Clip (ganzzahlig): Bilder / Länge der Videospur
+last_fps() {
+    local f; f="$(ls -t "$OUT"/clips/*.mp4 | head -1)"
+    ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames,duration -of csv=p=0 "$f" 2>/dev/null |
+        awk -F, '$2 > 0 { printf "%d", $2 / $1 }' 2>/dev/null
+}
+# check_fps <name> <Mindestbildrate>: ruckelnde Clips (nur alle paar Sekunden ein Bild) fallen hier auf
+check_fps() {
+    local fps; fps=$(last_fps)
+    if [ "${fps:-0}" -ge "$2" ]; then echo "PASS $1 (${fps} fps)"; else echo "FAIL $1 (${fps:-0} fps)"; FAILS=$((FAILS + 1)); fi
+}
 # check <name> <erwartete Anzahl> [<Mindestlänge>]
 check() {
     if wait_clips "$2"; then

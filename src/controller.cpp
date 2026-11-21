@@ -151,6 +151,9 @@ bool Controller::micMuted() const { return !recs_.empty() && recs_.front().secon
 void Controller::syncRecorders() {
     const Config eff = effective();
     const QStringList want = eff.recordingMonitors();
+    // Vorher merken: Unten wandern die Aufnahmen aus recs_ heraus (std::move) - micMuted() danach griff auf eine
+    // schon verschobene, leere Aufnahme zu, und Clipline stürzte bei jedem Speichern der Einstellungen ab
+    const bool muted = micMuted();
     for (auto it = recs_.begin(); it != recs_.end();) {
         if (!want.contains(it->first)) {
             it->second->stop();
@@ -196,7 +199,7 @@ void Controller::syncRecorders() {
             });
         }
         rec->setConfig(eff.recordingConfig(mon));
-        if (!recs_.empty() && !fresh) rec->setMicMuted(micMuted());
+        rec->setMicMuted(muted);  // auch neue Aufnahmen (weiterer Bildschirm) bleiben stumm, wenn das Mikrofon stumm ist
         if (fresh && !paused_) rec->start();
         ordered.emplace_back(mon, std::move(rec));
     }
@@ -250,11 +253,20 @@ void Controller::applyConfig(const Config& c, bool first) {
     if (autostartChanged && !quiet) setAutostart(cfg_.autostart);
     syncRecorders();
     registerHotkey();
-    if (gallery_) {  // neu aufbauen, damit Farben/Sprache greifen
+    if (gallery_) {  // neu aufbauen, damit Farben/Sprache greifen - an derselben Stelle und in derselben Größe
+        // Das alte Fenster löscht sich beim Schließen erst später (WA_DeleteOnClose): nicht wieder anzeigen,
+        // sonst verschwand die Clip-Liste kurz nach dem Speichern der Einstellungen
+        GalleryWindow* old = gallery_;
+        const QRect geo = old->geometry();
+        const bool max = old->isMaximized();
+        gallery_ = nullptr;
         const bool told = toldBackground_;
         toldBackground_ = true;
-        gallery_->close();
+        old->close();
         toldBackground_ = told;
+        gallery_ = new GalleryWindow(this);
+        gallery_->setGeometry(geo);
+        if (max) gallery_->showMaximized();
         showGallery();
     }
     refreshTray();

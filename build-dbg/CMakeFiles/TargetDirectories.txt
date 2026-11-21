@@ -1,0 +1,12 @@
+/home/user/clipline/build-dbg/CMakeFiles/rnnoise.dir
+/home/user/clipline/build-dbg/CMakeFiles/clipline.dir
+/home/user/clipline/build-dbg/CMakeFiles/edit_cache.dir
+/home/user/clipline/build-dbg/CMakeFiles/rebuild_cache.dir
+/home/user/clipline/build-dbg/CMakeFiles/list_install_components.dir
+/home/user/clipline/build-dbg/CMakeFiles/install.dir
+/home/user/clipline/build-dbg/CMakeFiles/install/local.dir
+/home/user/clipline/build-dbg/CMakeFiles/install/strip.dir
+/home/user/clipline/build-dbg/CMakeFiles/rnnoise_autogen_timestamp_deps.dir
+/home/user/clipline/build-dbg/CMakeFiles/rnnoise_autogen.dir
+/home/user/clipline/build-dbg/CMakeFiles/clipline_autogen_timestamp_deps.dir
+/home/user/clipline/build-dbg/CMakeFiles/clipline_autogen.dir

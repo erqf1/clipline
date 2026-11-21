@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QTemporaryFile>
 #include "i18n.h"
@@ -252,7 +253,7 @@ QStringList Recorder::buildArgs(bool withAudio) {
     // Selbsttest: Bild nach N Sekunden enden lassen, der Ton läuft weiter (wie ddagrab nach "Access lost")
     if (const int stall = qEnvironmentVariableIntValue("CLIPLINE_TESTSTALL"); stall > 0 && stallRestarts_ == 0)
         a << "-t" << QString::number(stall);
-    if (mon.ddaIndex >= 0) {
+    if (mon.ddaIndex >= 0 && !forceGdi_) {
         a << "-f" << "lavfi" << "-i"
           << QString("ddagrab=output_idx=%1:framerate=%2:draw_mouse=1").arg(mon.ddaIndex).arg(fps);
         vpre = "hwdownload,format=bgra,";
@@ -481,6 +482,7 @@ void Recorder::notePes(const uchar* packet, qint64 now) {
     const int sid = pesStart(packet, &pts);
     if ((sid & 0xF0) == 0xE0) {
         lastVideo_ = now;
+        ++fpsFrames_;  // ein PES-Paket = ein Bild
         if (pts >= 0) videoPts_ = pts;
     } else if (sid >= 0xC0 && sid <= 0xDF && pts >= 0) {
         audioPts_ = pts;
@@ -521,10 +523,42 @@ void Recorder::checkStall() {
     }
 #endif
     const bool hadVideo = lastVideo_ >= launchedAt_;
+    if (hadVideo) noFrameStarts_ = 0;
+    checkFrameRate(now);
     if (now - (hadVideo ? lastVideo_ : launchedAt_) < (hadVideo ? kStallMs : kFirstFrameMs)) return;
     ++stallRestarts_;
     appLog(QString("record: no picture for %1 s, restarting").arg((now - (hadVideo ? lastVideo_ : launchedAt_)) / 1000));
+    // ffmpeg läuft, aber es kam nach zwei Starts noch nie ein Bild: einfachere Aufnahmeart probieren
+    if (!hadVideo && ++noFrameStarts_ >= 2 && fallBack(QString::fromUtf8(errTail_))) noFrameStarts_ = 0;
     launch();
+}
+
+// Wie viele Bilder kommen wirklich an? Alle 10 s messen (die ersten 5 s nach dem Start zählen nicht: Anlauf).
+// Ins Protokoll jede Minute, deutlich zu wenig (unter 40 %) zweimal hintereinander: einmal Hinweis an den Nutzer -
+// sonst merkt man erst am fertigen Clip, dass er ruckelt.
+void Recorder::checkFrameRate(qint64 now) {
+    if (fpsSince_ < 0 || fpsSince_ < launchedAt_ + 5000) {
+        if (now >= launchedAt_ + 5000) {
+            fpsSince_ = now;
+            fpsFrames_ = 0;
+        }
+        return;
+    }
+    if (now - fpsSince_ < 10000) return;
+    const double fps = fpsFrames_ * 1000.0 / double(now - fpsSince_);
+    fpsSince_ = now;
+    fpsFrames_ = 0;
+    const bool slow = fps < 0.4 * cfg_.fps;
+    slowWindows_ = slow ? slowWindows_ + 1 : 0;
+    if (lastFpsLog_ < 0 || now - lastFpsLog_ >= 60000 || slowWindows_ == 1) {
+        lastFpsLog_ = now;
+        appLog(QString("record: %1 fps (set: %2)%3").arg(fps, 0, 'f', 1).arg(cfg_.fps).arg(slow ? ", TOO SLOW" : ""));
+    }
+    if (slowWindows_ >= 2 && !warnedSlow_) {
+        warnedSlow_ = true;
+        emit warning(L("Recording only reaches %1 fps instead of %2. Choose a lower resolution or frame rate under Settings, Clip keys.")
+                         .arg(int(std::lround(fps))).arg(cfg_.fps));
+    }
 }
 
 void Recorder::onFinished() {
@@ -552,16 +586,47 @@ void Recorder::onFinished() {
 #if defined(Q_OS_WIN)
     const bool audioFault = err.contains("clipline_audio");
 #else
-    const bool audioFault = true;
+    const bool audioFault = !err.contains(QRegularExpression("Error while opening encoder|nvenc|vaapi|videotoolbox",
+                                                             QRegularExpression::CaseInsensitiveOption));
 #endif
     if (quick && fails_ >= 2 && audioFault && audioOk_ && (cfg_.systemAudio || !cfg_.mic.isEmpty())) {
         audioOk_ = false;
         fails_ = 0;
         emit warning(L("The audio device could not be opened. Recording continues without sound."));
+    } else if (quick && fails_ >= 2 && fallBack(err)) {
+        fails_ = 0;
     } else if (fails_ == 4) {
         emit warning(L("Recording failed to start:") + "\n" + err.right(400));
     }
     retry_.start(std::min(15000, 500 * fails_ * fails_));
+}
+
+// Die Aufnahme kommt nicht in Gang (ffmpeg endet sofort oder liefert kein Bild). Häufig unter Windows auf Laptops mit
+// zwei Grafikkarten: Die Desktop Duplication (ddagrab) gehört der anderen Karte und schlägt fehl - dann über GDI
+// aufnehmen. Oder der Hardware-Encoder besteht den kurzen Test, scheitert aber bei der echten Aufnahme - dann
+// libx264. Gilt bis zum Beenden von Clipline. true = es gibt noch etwas zu probieren.
+bool Recorder::fallBack(const QString& err) {
+    const bool encoderFault =
+        encoder_ != "libx264" &&
+        err.contains(QRegularExpression("nvenc|amf|qsv|mfx|videotoolbox|encoder|OpenEncodeSession",
+                                        QRegularExpression::CaseInsensitiveOption));
+    auto useGdi = [&] {
+#if defined(Q_OS_WIN)
+        if (forceGdi_ || findMonitor(cfg_.monitor).ddaIndex < 0) return false;
+        forceGdi_ = true;
+        appLog("record: desktop duplication (ddagrab) does not work here, recording with GDI instead");
+        return true;
+#else
+        return false;
+#endif
+    };
+    auto useSoftware = [&] {
+        if (encoder_ == "libx264") return false;
+        appLog(QString("record: encoder %1 does not work here, using libx264 instead").arg(encoder_));
+        encoder_ = "libx264";
+        return true;
+    };
+    return encoderFault ? useSoftware() || useGdi() : useGdi() || useSoftware();
 }
 
 void Recorder::saveClip(const ClipButton& button) {
