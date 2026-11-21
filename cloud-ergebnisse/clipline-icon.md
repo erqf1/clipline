@@ -51,3 +51,31 @@ ERGEBNIS CLOUD-SESSION clipline-icon
      Namen <stil>-<modus>-<was>.webp, z. B. standard-dark-clips, standard-light-mic-test, acryl-dark-settings-look).
    - website-updates/changelog-1.9.3.html oben in Websites/clip/changelog.html einfügen (Markup an die Seite anpassen).
    - Dieselbe Desktop-Symbol-Lösung (Check: IsFirstInstall + Installer-Test) in die anderen Programme der Line-Serie übernehmen.
+
+---------------------------------------------------------------------------
+NACHTRAG 1.9.4 (Bug-Meldungen: Einstellungen-Absturz, Windows-Aufnahme startet nicht, Ruckeln unter Debian)
+
+1. Aufgabe und Status
+   - Absturz beim Speichern der Einstellungen: gefunden, behoben, mit Test abgesichert.
+   - Windows-Aufnahme startet nicht: Ursache auf dem Laptop nicht sicher bekannt (kein Log). Ausweichweg eingebaut:
+     nach zwei Fehlstarts GDI statt Desktop Duplication, danach libx264 statt Hardware-Encoder.
+   - Ruckeln (ein Bild alle paar Sekunden) bei Debian: NICHT nachstellbar (X11 und GNOME-Wayland, PipeWire und
+     PulseAudio, ffmpeg 5.1 und 6.1, Debian-12-chroot mit mutter 43 – überall flüssig). Jetzt: echte Bildrate im Log,
+     bei viel zu wenig ein Hinweis an den Nutzer. Für den echten Fix wird das Log gebraucht.
+2. Commits: 1a3452e (Fixes), 5ba2a41 (versehentlich eingechecktes build-dbg/ wieder entfernt – liegt aber in der
+   Branch-History, beim Mergen nach main deshalb SQUASH verwenden), danach Changelog/Bericht.
+   Release: v1.9.4 per workflow_dispatch. CI vorab: Release-Testlauf (ohne Version) und Linux test grün.
+3. Ursache Absturz: Controller::syncRecorders() rief micMuted() auf, nachdem die Aufnahmen per std::move aus recs_
+   genommen waren -> Nullzeiger bei JEDEM Speichern (seit dem Umbau der Clip-Tasten-Karten). Außerdem verschwand die
+   Clip-Liste nach dem Speichern (WA_DeleteOnClose-Fenster wurde wieder gezeigt).
+4. Tests: Absturz mit xdotool unter X11 nachgestellt (exit 139) und nach dem Fix 3x gespeichert ohne Absturz;
+   Selbsttest speichert Einstellungen zweimal (Gegenprobe: alter Code stürzt im Test ab). Linux-CI (offscreen) und
+   Windows-CI (mit echter 40-s-Aufnahme auf dem Runner) prüfen das. X11-Test prüft jetzt die Bildrate des Clips.
+   Encoder-Ausweichweg lokal getestet (vorgetäuschter h264_nvenc -> nach 0,7 s libx264, Clip ok). GDI-Ausweichweg nur
+   gebaut, nicht auf einem Laptop mit zwei GPUs getestet.
+5. Offen / Nutzer:
+   - Freund (Debian): Clipline 1.9.4 installieren, 1 Minute aufnehmen, dann ~/.local/share/WSoftware/Clipline/clipline.log
+     schicken und sagen: Desktop (GNOME/KDE/…), Wayland oder X11 (echo $XDG_SESSION_TYPE), Grafikkarte.
+   - Eigener Windows-Laptop: auf 1.9.4 updaten; geht die Aufnahme noch immer nicht:
+     %LOCALAPPDATA%\WSoftware\Clipline\clipline.log schicken.
+6. Haupt-Session: website-updates/changelog-1.9.4.html oben in Websites/clip/changelog.html einfügen.
