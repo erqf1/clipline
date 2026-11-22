@@ -35,6 +35,7 @@ struct Config {
     bool acryl = false;       // Stil Acryl (hat Vorrang vor Minimal)
     bool dark = true;
     bool autostart = true;
+    bool updateNotify = true; // Benachrichtigung, wenn ein Update bereitsteht
     bool sound = true;
     QString language;         // "", "en", "de"
     QString waylandToken;     // Linux/Wayland: gemerkte Bildschirmfreigabe (kein Portal-Dialog bei jedem Start)

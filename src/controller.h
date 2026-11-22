@@ -42,6 +42,8 @@ public slots:
 
 private:
     Updater* updater_ = nullptr;
+    QAction* actUpdate_ = nullptr;  // "Update X installieren" im Tray-Menü (nur sichtbar, wenn eins bereitsteht)
+    bool updateNote_ = false;       // letzte Benachrichtigung war der Update-Hinweis (Klick darauf = Update anbieten)
     void applyConfig(const Config& c, bool first);
     void registerHotkey();
     void refreshTray();

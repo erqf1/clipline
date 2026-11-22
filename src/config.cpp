@@ -36,6 +36,7 @@ Config Config::load() {
     c.minimal = s.value("minimal", c.minimal).toBool();
     c.acryl = s.value("acryl", c.acryl).toBool();
     c.autostart = s.value("autostart", c.autostart).toBool();
+    c.updateNotify = s.value("updateNotify", c.updateNotify).toBool();
     c.sound = s.value("sound", c.sound).toBool();
     c.language = s.value("language", c.language).toString();
     c.waylandToken = s.value("waylandToken").toString();
@@ -130,6 +131,7 @@ void Config::save() const {
     s.setValue("minimal", minimal);
     s.setValue("acryl", acryl);
     s.setValue("autostart", autostart);
+    s.setValue("updateNotify", updateNotify);
     s.setValue("sound", sound);
     s.setValue("language", language);
     s.setValue("waylandToken", waylandToken);

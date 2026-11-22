@@ -57,6 +57,8 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     menu_.addSeparator();
     menu_.addAction(L("Open folder"), this, [this] { revealInFolder(cfg_.clipsDir); });
     menu_.addAction(L("Settings"), this, &Controller::openSettings);
+    actUpdate_ = menu_.addAction(QString(), this, [this] { if (updater_) updater_->promptPending(); });
+    actUpdate_->setVisible(false);
     menu_.addAction(L("Check for updates"), this, [this] { if (updater_) updater_->check(true); });
 #if defined(Q_OS_LINUX)
     // Wayland: Befehl für eine Taste in den Systemeinstellungen (KDE: Kurzbefehle -> Befehl hinzufügen)
@@ -71,7 +73,10 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
     connect(&tray_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason r) {
         if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick) showGallery();
     });
-    connect(&tray_, &QSystemTrayIcon::messageClicked, this, &Controller::showGallery);
+    connect(&tray_, &QSystemTrayIcon::messageClicked, this, [this] {
+        if (updateNote_ && updater_) { updateNote_ = false; updater_->promptPending(); }
+        else showGallery();
+    });
 
     // Updates: nach dem Start und dann täglich still prüfen; fragt nur bei neuer, nicht ignorierter Version
     if (!quiet) {
@@ -89,6 +94,20 @@ Controller::Controller(const Config& cfg, QObject* parent) : QObject(parent), cf
                                 L("You're using the latest version."), L("Cancel")};
         };
         uo.quit = [this] { quit(); };
+        // Automatisch gefunden: nie per Dialog mitten ins Spiel fragen. Nur Tray-Eintrag und (einmal je Version,
+        // abschaltbar) eine Benachrichtigung; gefragt wird erst, wenn man darauf klickt.
+        uo.onAvailable = [this](const QString& ver) {
+            if (actUpdate_) {
+                actUpdate_->setText(L("Install update %1").arg(ver));
+                actUpdate_->setVisible(true);
+            }
+            QSettings st;
+            if (!cfg_.updateNotify || st.value("update/notified").toString() == ver) return;
+            st.setValue("update/notified", ver);
+            notify(L("Update available"), L("Clipline %1 is ready. Click here or use \“Install update\” in the tray menu.").arg(ver),
+                   QSystemTrayIcon::Information, 8000);
+            updateNote_ = true;
+        };
         updater_ = new Updater(uo, this);
         updater_->startAutoCheck(15000);
     }
@@ -445,6 +464,7 @@ void Controller::hotkeyHint(const QString& text) {
 
 void Controller::notify(const QString& title, const QString& text, QSystemTrayIcon::MessageIcon icon, int ms) {
     if (quiet) return;
+    updateNote_ = false;  // ein Klick auf diese Meldung öffnet die Galerie, nicht das Update
     if (icon == QSystemTrayIcon::Warning) appLog(QString("notice: %1: %2").arg(title, text).simplified());
     // Linux: über den Benachrichtigungsdienst - viele Wayland-Desktops (Hyprland, GNOME) haben kein Tray
     if (desktopNotify(title, text, ms, icon == QSystemTrayIcon::Warning)) return;

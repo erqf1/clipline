@@ -609,6 +609,11 @@ QWidget* ConfigPages::folderPage(bool welcome) {
     autostart->setChecked(cfg_.autostart);
     connect(autostart, &QCheckBox::toggled, this, [this](bool on) { cfg_.autostart = on; emit changed(); });
     v->addWidget(autostart);
+    auto* updNote = new QCheckBox(L("Notify me when an update is ready"));
+    updNote->setToolTip(L("Clipline never interrupts you with a question. Updates can always be installed from the tray menu."));
+    updNote->setChecked(cfg_.updateNotify);
+    connect(updNote, &QCheckBox::toggled, this, [this](bool on) { cfg_.updateNotify = on; emit changed(); });
+    v->addWidget(updNote);
     v->addStretch();
     return w;
 }

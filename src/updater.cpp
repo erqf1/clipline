@@ -69,6 +69,15 @@ void Updater::startAutoCheck(int firstDelayMs) {
     hourly->start(60 * 60 * 1000);
 }
 
+void Updater::promptPending() {
+    if (pending_.isEmpty()) return check(true);
+    if (busy_) return;
+    busy_ = true;
+    const QJsonObject rel = pending_;
+    onRelease(rel, true);  // vom Nutzer angestoßen: fragt jetzt
+    busy_ = installing_;
+}
+
 void Updater::check(bool manual) {
     if (busy_) return;
     busy_ = true;
@@ -117,6 +126,13 @@ void Updater::onRelease(const QJsonObject& rel, bool manual) {
     if (!manual && st.value("update/later").toString() == tag &&
         QDateTime::currentDateTime() < st.value("update/laterUntil").toDateTime())
         return;
+    // Automatische Suche: nicht mitten in die Arbeit fragen, nur Bescheid geben
+    if (!manual && o_.onAvailable) {
+        pending_ = rel;
+        o_.onAvailable(ver);
+        return;
+    }
+    pending_ = QJsonObject();
 
     QMessageBox box(parent);
     box.setIcon(QMessageBox::Information);

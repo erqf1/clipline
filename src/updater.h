@@ -37,6 +37,9 @@ public:
         std::function<bool()> beforeInstall;  // optional: false = nicht beenden (z. B. ungespeicherte Arbeit)
         std::function<void()> quit;           // optional: sauber beenden (sonst QCoreApplication::quit)
         QString innoAppId;                    // Windows: AppId des Installers (ohne {}), erkennt "alle Benutzer" / "nur ich"
+        // optional: Bei der automatischen Suche wird dann NICHT per Dialog gefragt (der würde mitten in ein
+        // Spiel oder die Arbeit springen), sondern nur Bescheid gegeben. Gefragt wird erst über promptPending().
+        std::function<void(const QString& version)> onAvailable;
     };
 
     explicit Updater(Options o, QObject* parent = nullptr);
@@ -44,6 +47,9 @@ public:
     void check(bool manual = false);
     // Automatisch: kurz nach dem Start und dann stündlich (scheitert eine Suche, nach 10 Minuten nochmal)
     void startAutoCheck(int firstDelayMs);
+    // Gefundenes Update jetzt anbieten (der Nutzer hat geklickt); ohne gefundenes Update wie check(true)
+    void promptPending();
+    bool hasPending() const { return !pending_.isEmpty(); }
 
 private:
     void onRelease(const QJsonObject& rel, bool manual);
@@ -56,4 +62,5 @@ private:
     QNetworkAccessManager* net_;
     bool busy_ = false;        // Suche, Frage oder Download läuft: keine zweite Suche starten
     bool installing_ = false;
+    QJsonObject pending_;      // automatisch gefundenes, noch nicht angebotenes Release
 };
