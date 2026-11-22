@@ -79,3 +79,20 @@ NACHTRAG 1.9.4 (Bug-Meldungen: Einstellungen-Absturz, Windows-Aufnahme startet n
    - Eigener Windows-Laptop: auf 1.9.4 updaten; geht die Aufnahme noch immer nicht:
      %LOCALAPPDATA%\WSoftware\Clipline\clipline.log schicken.
 6. Haupt-Session: website-updates/changelog-1.9.4.html oben in Websites/clip/changelog.html einfügen.
+
+---------------------------------------------------------------------------
+NACHTRAG 1.9.5 (Einstellungen stürzten unter 1.9.4 weiter ab, Linux-Clips weiter "buggy")
+
+- Release v1.9.5: https://github.com/erqf1/clipline/releases/tag/v1.9.5 – alle 7 Pakete, Release-Workflow und
+  Linux test grün (inkl. neuer Stresstests). Commit 43387b2.
+- Zweiter Einstellungen-Absturz gefunden (AddressSanitizer + neuer Stresstest clipline --settingstest):
+  syncRecorders() startete Aufnahmen neu, während sie per std::move aus recs_ genommen waren -> stateChanged ->
+  refreshTray() -> recording() -> Nullzeiger. Trat auf, sobald sich beim Speichern die Aufnahme ändern musste
+  (Auflösung, Bildrate, Qualität, Bildschirm, Ton). Umgebaut: recs_ hat nie leere Einträge.
+  Lokal 200 Runden zufällige Einstellungen (1 und 2 Bildschirme) ohne Fehler; 1.9.4 stürzt im selben Test in Runde 5 ab.
+  CI: Linux (tests/settings.sh, ASan, 2 Bildschirme), Windows (Release-Workflow, echte Aufnahme, 20 Runden).
+- Linux/Wayland: videorate entfernt, feste Bildrate macht ffmpeg (fps-Filter nach Wanduhr). Grund: pipewiresrc 0.3.x
+  (Debian 12) stempelt echte Bilder und Keepalive-Wiederholungen mit verschiedenen Uhren; videorate könnte dann echte
+  Bilder verwerfen. NICHT bewiesen (lokal ließ sich der Fehler nicht auslösen) – wenn der Freund weiter Probleme hat:
+  clipline.log + kurzer Clip + echo $XDG_SESSION_TYPE $XDG_CURRENT_DESKTOP + Grafikkarte.
+- Haupt-Session: website-updates/changelog-1.9.5.html oben in Websites/clip/changelog.html einfügen.
