@@ -151,59 +151,67 @@ bool Controller::micMuted() const { return !recs_.empty() && recs_.front().secon
 void Controller::syncRecorders() {
     const Config eff = effective();
     const QStringList want = eff.recordingMonitors();
-    // Vorher merken: Unten wandern die Aufnahmen aus recs_ heraus (std::move) - micMuted() danach griff auf eine
-    // schon verschobene, leere Aufnahme zu, und Clipline stürzte bei jedem Speichern der Einstellungen ab
     const bool muted = micMuted();
+    // recs_ hat während des Umbaus nie leere Einträge: Beim Neustart einer Aufnahme (andere Auflösung, Bildrate, Ton …)
+    // meldet sie sofort "Status geändert", und refreshTray()/recording()/micMuted() gehen alle Aufnahmen durch. Früher
+    // waren die Aufnahmen da schon per std::move aus recs_ genommen - Nullzeiger, Clipline stürzte beim Speichern ab.
+    // 1. Nicht mehr gebrauchte Aufnahmen erst aus der Liste nehmen, dann beenden
+    std::vector<std::unique_ptr<Recorder>> gone;
     for (auto it = recs_.begin(); it != recs_.end();) {
         if (!want.contains(it->first)) {
-            it->second->stop();
             it->second->disconnect(this);
+            gone.push_back(std::move(it->second));
             it = recs_.erase(it);
         } else {
             ++it;
         }
     }
-    std::vector<std::pair<QString, std::unique_ptr<Recorder>>> ordered;
+    for (auto& r : gone) r->stop();
+    gone.clear();
+    // 2. Fehlende Aufnahmen anlegen (noch nicht gestartet)
+    std::vector<Recorder*> fresh;
     for (const QString& mon : want) {
-        auto it = std::find_if(recs_.begin(), recs_.end(), [&](const auto& p) { return p.first == mon; });
-        std::unique_ptr<Recorder> rec;
-        const bool fresh = it == recs_.end();
-        if (!fresh) rec = std::move(it->second);
-        else {
-            rec = std::make_unique<Recorder>();
-            Recorder* r = rec.get();
-            connect(r, &Recorder::stateChanged, this, &Controller::refreshTray);
-            // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
-            connect(r, &Recorder::waylandTokenChanged, this, [this](const QString& token) {
-                cfg_.waylandToken = token;
-                if (!quiet) cfg_.save();
-            });
-            connect(r, &Recorder::warning, this, [this](const QString& w) { notify("Clipline", w, QSystemTrayIcon::Warning, 6000); });
-            // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
-            // (Hinweise blendet Windows im Spiel oft aus)
-            connect(r, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
-                appLog(QString("save: %1 %2 %3").arg(ok ? "ok" : "FAILED", path, err));
-                if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
-                if (ok) {
-                    lastClip_ = path;
-                    if (err.isEmpty())
-                        notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
-                    else
-                        notify(L("Clip incomplete"), QFileInfo(path).fileName() + "\n" + err, QSystemTrayIcon::Warning, 6000);
-                    if (gallery_) gallery_->reload();
-                    emit clipDone(path, true);
-                } else {
-                    emit clipDone(QString(), false);
-                    notify("Clipline", err.isEmpty() ? L("Could not save the clip.") : err.left(300), QSystemTrayIcon::Warning, 5000);
-                }
-            });
-        }
-        rec->setConfig(eff.recordingConfig(mon));
-        rec->setMicMuted(muted);  // auch neue Aufnahmen (weiterer Bildschirm) bleiben stumm, wenn das Mikrofon stumm ist
-        if (fresh && !paused_) rec->start();
-        ordered.emplace_back(mon, std::move(rec));
+        if (std::any_of(recs_.begin(), recs_.end(), [&](const auto& p) { return p.first == mon; })) continue;
+        auto rec = std::make_unique<Recorder>();
+        Recorder* r = rec.get();
+        connect(r, &Recorder::stateChanged, this, &Controller::refreshTray);
+        // Linux/Wayland: gemerkte Bildschirmfreigabe speichern -> beim nächsten Start kein Portal-Dialog
+        connect(r, &Recorder::waylandTokenChanged, this, [this](const QString& token) {
+            cfg_.waylandToken = token;
+            if (!quiet) cfg_.save();
+        });
+        connect(r, &Recorder::warning, this, [this](const QString& w) { notify("Clipline", w, QSystemTrayIcon::Warning, 6000); });
+        // Ton erst, wenn der Clip geprüft ist: hell nur für einen vollständigen Clip, sonst der tiefe Fehlerton
+        // (Hinweise blendet Windows im Spiel oft aus)
+        connect(r, &Recorder::clipSaved, this, [this](const QString& path, bool ok, const QString& err) {
+            appLog(QString("save: %1 %2 %3").arg(ok ? "ok" : "FAILED", path, err));
+            if (cfg_.sound) ok && err.isEmpty() ? playSaveSound() : playErrorSound();
+            if (ok) {
+                lastClip_ = path;
+                if (err.isEmpty())
+                    notify(L("Clip saved"), QFileInfo(path).fileName(), QSystemTrayIcon::Information, 3500);
+                else
+                    notify(L("Clip incomplete"), QFileInfo(path).fileName() + "\n" + err, QSystemTrayIcon::Warning, 6000);
+                if (gallery_) gallery_->reload();
+                emit clipDone(path, true);
+            } else {
+                emit clipDone(QString(), false);
+                notify("Clipline", err.isEmpty() ? L("Could not save the clip.") : err.left(300), QSystemTrayIcon::Warning, 5000);
+            }
+        });
+        fresh.push_back(rec.get());
+        recs_.emplace_back(mon, std::move(rec));
     }
-    recs_ = std::move(ordered);
+    // 3. Reihenfolge wie die Knöpfe (Knopf 1 zuerst) - nur umsortieren, dabei meldet sich niemand
+    std::stable_sort(recs_.begin(), recs_.end(),
+                     [&](const auto& a, const auto& b) { return want.indexOf(a.first) < want.indexOf(b.first); });
+    // 4. Erst jetzt einstellen und starten
+    for (size_t i = 0; i < recs_.size(); ++i) {
+        Recorder* r = recs_[i].second.get();
+        r->setConfig(eff.recordingConfig(recs_[i].first));
+        r->setMicMuted(muted);  // auch neue Aufnahmen (weiterer Bildschirm) bleiben stumm, wenn das Mikrofon stumm ist
+        if (!paused_ && std::find(fresh.begin(), fresh.end(), r) != fresh.end()) r->start();
+    }
     appLog(QString("record: %1 recording(s): %2").arg(recs_.size()).arg(want.join(", ")));
 }
 

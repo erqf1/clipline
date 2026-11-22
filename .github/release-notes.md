@@ -1,3 +1,3 @@
-Einstellungen speichern stürzt nicht mehr ab (passierte bei jeder Änderung im Nachhinein). Windows: Startet die Aufnahme nicht, z. B. auf Laptops mit zwei Grafikkarten, nimmt Clipline jetzt automatisch auf anderem Weg auf. Ruckelt die Aufnahme, gibt es einen Hinweis.
+Einstellungen speichern stürzt jetzt wirklich nicht mehr ab: Es gab einen zweiten Absturz, wenn sich Auflösung, Bildrate, Qualität, Bildschirm oder Ton änderten. Linux (Wayland): Die Aufnahme verlässt sich nicht mehr auf die Zeitstempel des Desktops, das konnte zu Clips mit nur einem Bild alle paar Sekunden führen.
 
 Alles Neue: https://mert.win/clip/changelog.html

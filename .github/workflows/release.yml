@@ -59,6 +59,17 @@ jobs:
           $t = Get-Content (Join-Path $d 'selftest.txt') -Raw
           if ($t -notmatch 'settings applied twice, gallery visible') { throw 'saving the settings crashed' }
           if ($t -notmatch 'clip ok=1') { throw "no clip recorded (exit $($p.ExitCode))" }
+      - name: Settings stress test (change and save settings 20 times while recording)
+        shell: pwsh
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'settingstest'
+          $p = Start-Process -Wait -PassThru -FilePath (Resolve-Path dist/Clipline/Clipline.exe) -ArgumentList '--settingstest', $d, '20', '7'
+          $t = Get-Content (Join-Path $d 'settingstest.txt') -Raw
+          Get-Content (Join-Path $d 'settingstest.txt') -Tail 15
+          $log = Join-Path $env:LOCALAPPDATA 'WSoftware\Clipline\clipline.log'
+          if (Test-Path $log) { Get-Content $log -Tail 15 }
+          if ($p.ExitCode -ne 0 -or $t -notmatch 'settingstest finished') { throw "Clipline crashed while saving settings (exit $($p.ExitCode))" }
+          if ($t -match 'GONE') { throw 'clip list vanished after saving the settings' }
       - name: Installer
         shell: pwsh
         run: |

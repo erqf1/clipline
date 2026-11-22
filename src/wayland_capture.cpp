@@ -196,19 +196,21 @@ void WaylandCapture::fail(const QString& error) {
 }
 
 QStringList WaylandCapture::gstArgs(int fd, const QSize& out, int fps) const {
-    // keepalive-time: PipeWire schickt bei stillem Bild nichts - das letzte Bild alle 100 ms wiederholen,
-    // videorate füllt auf die Bildrate auf (sonst stockt ffmpeg und der Ton läuft davon).
-    // Die beiden "leaky" Warteschlangen werfen alte Bilder weg, wenn Umrechnen oder ffmpeg nicht hinterherkommen.
-    // Ohne sie staute videorate unter Last (Spiel + Aufnahme) immer weiter: nach ein paar Minuten zeigte der
-    // Clip ein Bild von vor Minuten, der Ton war aktuell.
+    Q_UNUSED(fps);  // die feste Bildrate macht ffmpeg (fps-Filter nach der Wanduhr), siehe Recorder::buildArgs
+    // keepalive-time: PipeWire schickt bei stillem Bild nichts - das letzte Bild alle 100 ms wiederholen.
+    // KEIN videorate mehr: pipewiresrc stempelt echte Bilder mit der Uhr des Compositors, die Wiederholungen mit der
+    // Uhr der Pipeline (PipeWire 0.3.x, z. B. Debian 12). Liegen die Uhren auseinander, warf videorate alle echten
+    // Bilder als "zu spät" weg und ließ nur die Wiederholungen durch - der Clip zeigte ein Bild alle paar Sekunden.
+    // Jetzt geht jedes Bild sofort weiter; ffmpeg gibt ihm den Zeitstempel der Wanduhr beim Lesen.
+    // Die "leaky" Warteschlangen werfen alte Bilder weg, wenn Umrechnen oder ffmpeg nicht hinterherkommen (sonst
+    // zeigte der Clip unter Last ein Bild von vor Minuten).
     const QString leaky = "max-size-buffers=2";
     return {"-q",
             "pipewiresrc", QString("fd=%1").arg(fd), QString("path=%1").arg(node_), "do-timestamp=true",
             "keepalive-time=100", "always-copy=true",
             "!", "queue", "leaky=downstream", leaky, "max-size-bytes=0", "max-size-time=0",
-            "!", "videoconvert", "!", "videoscale", "!", "videorate",
-            "!", QString("video/x-raw,format=NV12,width=%1,height=%2,framerate=%3/1,pixel-aspect-ratio=1/1")
-                     .arg(out.width()).arg(out.height()).arg(fps),
+            "!", "videoconvert", "!", "videoscale",
+            "!", QString("video/x-raw,format=NV12,width=%1,height=%2,pixel-aspect-ratio=1/1").arg(out.width()).arg(out.height()),
             "!", "queue", "leaky=downstream", leaky, "max-size-bytes=0", "max-size-time=0",
             "!", "fdsink", "fd=1", "sync=false"};
 }

@@ -23,6 +23,7 @@
 #include "look.h"
 #include "setup.h"
 #include "siteshots.h"
+#include "settingstest.h"
 #ifdef Q_OS_LINUX
 #include "wayland_hotkeys.h"
 #endif
@@ -332,6 +333,10 @@ int main(int argc, char* argv[]) {
         f.close();
         return rc;
     }
+    // Einstellungen zufällig ändern und speichern, mit echter Aufnahme: --settingstest <ordner> [runden] [seed]
+    if (const int t = args.indexOf("--settingstest"); t >= 0 && t + 1 < args.size())
+        return settingsTest(args[t + 1], t + 2 < args.size() ? args[t + 2].toInt() : 30,
+                            t + 3 < args.size() ? args[t + 3].toUInt() : 1);
     // Bilder für die Website (unsichtbar): --siteshots <ordner>
     if (const int ss = args.indexOf("--siteshots"); ss >= 0 && ss + 1 < args.size()) return siteShots(args[ss + 1]);
     // Entwickler-Test: Mikrofon-Kette auf eine Datei anwenden (--micfile in.raw out.raw gate denoise)
